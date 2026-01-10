@@ -215,7 +215,7 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     ],
     minInputs: 0,
     maxInputs: 10,
-    description: '生成可复用的场景/人物风格描述词模板'
+    description: '全局风格设定,生成可复用的场景/人物风格描述词模板'
   }
 };
 

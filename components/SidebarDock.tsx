@@ -59,7 +59,7 @@ const getNodeNameCN = (t: string) => {
         case NodeType.CHARACTER_NODE: return '角色设计';
         case NodeType.DRAMA_ANALYZER: return '剧目分析';
         case NodeType.DRAMA_REFINED: return '剧目精炼';
-        case NodeType.STYLE_PRESET: return '风格设定';
+        case NodeType.STYLE_PRESET: return '全局风格';
         default: return t;
     }
 };

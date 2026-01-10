@@ -353,7 +353,7 @@ export const App = () => {
           case NodeType.CHARACTER_NODE: return t.nodes.characterNode;
           case NodeType.DRAMA_ANALYZER: return '剧目分析';
           case NodeType.DRAMA_REFINED: return '剧目精炼';
-          case NodeType.STYLE_PRESET: return '风格设定';
+          case NodeType.STYLE_PRESET: return '全局风格';
           default: return type;
       }
   };
