@@ -34,7 +34,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
       NodeType.IMAGE_GENERATOR,
       NodeType.IMAGE_EDITOR,
       NodeType.STORYBOARD_GENERATOR,
-      NodeType.CHARACTER_NODE
+      NodeType.CHARACTER_NODE,
+      NodeType.STYLE_PRESET  // 接入风格设定
     ],
     allowedOutputs: [
       NodeType.IMAGE_GENERATOR,    // 可继续生成图像
@@ -42,7 +43,7 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
       NodeType.IMAGE_EDITOR        // 图像编辑
     ],
     minInputs: 0,
-    maxInputs: 5,  // 支持多图参考 (1个prompt + 4个参考图)
+    maxInputs: 6,  // 支持多图参考 + 风格设定
     description: '生成图像,支持文本和参考图像输入'
   },
 
@@ -54,26 +55,28 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
       NodeType.VIDEO_GENERATOR,    // 视频续写
       NodeType.IMAGE_EDITOR,
       NodeType.STORYBOARD_GENERATOR,
-      NodeType.CHARACTER_NODE
+      NodeType.CHARACTER_NODE,
+      NodeType.STYLE_PRESET  // 接入风格设定
     ],
     allowedOutputs: [
       NodeType.VIDEO_GENERATOR,    // 视频续写
       NodeType.VIDEO_ANALYZER      // 视频分析
     ],
     minInputs: 0,
-    maxInputs: 3,  // prompt + image/video + character
+    maxInputs: 4,  // prompt + image/video + character + style
     description: '生成视频,支持文本、图像、视频输入'
   },
 
   // 灵感音乐 - 仅接收文本输入,作为终点节点
   [NodeType.AUDIO_GENERATOR]: {
     allowedInputs: [
-      NodeType.PROMPT_INPUT
+      NodeType.PROMPT_INPUT,
+      NodeType.STYLE_PRESET  // 接入风格设定
     ],
     allowedOutputs: [],  // 音频是终点节点
     minInputs: 1,
-    maxInputs: 1,
-    description: '生成音频,仅接受文本输入'
+    maxInputs: 2,  // prompt + style
+    description: '生成音频,接受文本和风格输入'
   },
 
   // 视频分析 - 仅接收视频输入,可输出到文本节点
@@ -94,7 +97,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
   [NodeType.IMAGE_EDITOR]: {
     allowedInputs: [
       NodeType.IMAGE_GENERATOR,
-      NodeType.IMAGE_EDITOR
+      NodeType.IMAGE_EDITOR,
+      NodeType.STYLE_PRESET  // 接入风格设定
     ],
     allowedOutputs: [
       NodeType.IMAGE_GENERATOR,
@@ -102,7 +106,7 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
       NodeType.IMAGE_EDITOR        // 可继续编辑
     ],
     minInputs: 1,
-    maxInputs: 2,  // 图像 + 编辑指令
+    maxInputs: 3,  // 图像 + 编辑指令 + style
     description: '编辑图像,需要图像输入'
   },
 
@@ -115,7 +119,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     ],
     allowedOutputs: [
       NodeType.SCRIPT_EPISODE,
-      NodeType.CHARACTER_NODE
+      NodeType.CHARACTER_NODE,
+      NodeType.STYLE_PRESET  // 输出到风格设定
     ],
     minInputs: 0,
     maxInputs: 3,
@@ -173,7 +178,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     allowedInputs: [],
     allowedOutputs: [
       NodeType.DRAMA_REFINED,
-      NodeType.SCRIPT_PLANNER
+      NodeType.SCRIPT_PLANNER,
+      NodeType.STYLE_PRESET  // 输出到风格设定
     ],
     minInputs: 0,
     maxInputs: 0,
@@ -188,7 +194,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     allowedOutputs: [
       NodeType.SCRIPT_PLANNER,
       NodeType.SCRIPT_EPISODE,
-      NodeType.IMAGE_GENERATOR
+      NodeType.IMAGE_GENERATOR,
+      NodeType.STYLE_PRESET  // 输出到风格设定
     ],
     minInputs: 1,
     maxInputs: 1,

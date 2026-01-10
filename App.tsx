@@ -353,6 +353,7 @@ export const App = () => {
           case NodeType.CHARACTER_NODE: return t.nodes.characterNode;
           case NodeType.DRAMA_ANALYZER: return '剧目分析';
           case NodeType.DRAMA_REFINED: return '剧目精炼';
+          case NodeType.STYLE_PRESET: return '风格设定';
           default: return type;
       }
   };
@@ -1432,13 +1433,17 @@ export const App = () => {
               }
 
           } else if (node.type === NodeType.IMAGE_GENERATOR) {
-               // ... (Existing Image Logic UNCHANGED) ...
+               // Extract style preset from inputs
+               const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+               const stylePrefix = stylePresetNode?.data.stylePrompt || '';
+               const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
+
                const inputImages: string[] = [];
                inputs.forEach(n => { if (n?.data.image) inputImages.push(n.data.image); });
-               const isStoryboard = /分镜|storyboard|sequence|shots|frames|json/i.test(prompt);
+               const isStoryboard = /分镜|storyboard|sequence|shots|frames|json/i.test(finalPrompt);
                if (isStoryboard) {
                   try {
-                      const storyboard = await planStoryboard(prompt, upstreamTexts.join('\n'));
+                      const storyboard = await planStoryboard(finalPrompt, upstreamTexts.join('\n'));
                       if (storyboard.length > 1) {
                           // ... (Storyboard Expansion Logic UNCHANGED) ...
                           const newNodes: AppNode[] = [];
@@ -1489,11 +1494,16 @@ export const App = () => {
                       }
                   } catch (e) { console.warn("Storyboard planning failed", e); }
                }
-              const res = await generateImageFromText(prompt, node.data.model, inputImages, { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount });
+              const res = await generateImageFromText(finalPrompt, node.data.model, inputImages, { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount });
               handleNodeUpdate(id, { image: res[0], images: res });
 
           } else if (node.type === NodeType.VIDEO_GENERATOR) {
-              const strategy = await getGenerationStrategy(node, inputs, prompt);
+              // Extract style preset from inputs
+              const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+              const stylePrefix = stylePresetNode?.data.stylePrompt || '';
+              const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
+
+              const strategy = await getGenerationStrategy(node, inputs, finalPrompt);
               const res = await generateVideo(
                   strategy.finalPrompt,
                   node.data.model, 
@@ -1520,7 +1530,12 @@ export const App = () => {
               }
 
           } else if (node.type === NodeType.AUDIO_GENERATOR) {
-              const audioUri = await generateAudio(prompt);
+              // Extract style preset from inputs
+              const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+              const stylePrefix = stylePresetNode?.data.stylePrompt || '';
+              const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
+
+              const audioUri = await generateAudio(finalPrompt);
               handleNodeUpdate(id, { audioUri: audioUri });
 
           } else if (node.type === NodeType.STORYBOARD_GENERATOR) {
@@ -1576,10 +1591,15 @@ export const App = () => {
              const txt = await analyzeVideo(vidData, prompt, node.data.model);
              handleNodeUpdate(id, { analysis: txt });
           } else if (node.type === NodeType.IMAGE_EDITOR) {
+             // Extract style preset from inputs
+             const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+             const stylePrefix = stylePresetNode?.data.stylePrompt || '';
+             const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
+
              const inputImages: string[] = [];
              inputs.forEach(n => { if (n?.data.image) inputImages.push(n.data.image); });
              const img = node.data.image || inputImages[0];
-             const res = await editImageWithText(img, prompt, node.data.model);
+             const res = await editImageWithText(img, finalPrompt, node.data.model);
              handleNodeUpdate(id, { image: res });
           }
           setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
