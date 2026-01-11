@@ -12,6 +12,7 @@ import { SonicStudio } from './components/SonicStudio';
 import { CharacterLibrary } from './components/CharacterLibrary';
 import { CharacterDetailModal } from './components/CharacterDetailModal';
 import { SettingsPanel } from './components/SettingsPanel';
+import { DebugPanel } from './components/DebugPanel';
 import { AppNode, NodeType, NodeStatus, Connection, ContextMenuState, Group, Workflow, SmartSequenceItem, CharacterProfile } from './types';
 import { generateImageFromText, generateVideo, analyzeVideo, editImageWithText, planStoryboard, orchestrateVideoPrompt, compileMultiFramePrompt, urlToBase64, extractLastFrame, generateAudio, generateScriptPlanner, generateScriptEpisodes, generateCinematicStoryboard, extractCharactersFromText, generateCharacterProfile, detectTextInImage, analyzeDrama } from './services/geminiService';
 import { getGenerationStrategy } from './services/videoStrategies';
@@ -227,7 +228,8 @@ export const App = () => {
   const [isCharacterLibraryOpen, setIsCharacterLibraryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isApiKeyPromptOpen, setIsApiKeyPromptOpen] = useState(false);
-  const [viewingCharacter, setViewingCharacter] = useState<CharacterProfile | null>(null);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
+  const [viewingCharacter, setViewingCharacter] = useState<{ character: CharacterProfile, nodeId: string } | null>(null);
 
   // --- Canvas State (TODO: migrate to useNodeOperations) ---
   const [nodes, setNodes] = useState<AppNode[]>([]);
@@ -350,6 +352,7 @@ export const App = () => {
           case NodeType.SCRIPT_PLANNER: return t.nodes.scriptPlanner;
           case NodeType.SCRIPT_EPISODE: return t.nodes.scriptEpisode;
           case NodeType.STORYBOARD_GENERATOR: return t.nodes.storyboardGenerator;
+          case NodeType.STORYBOARD_IMAGE: return '分镜图设计';
           case NodeType.CHARACTER_NODE: return t.nodes.characterNode;
           case NodeType.DRAMA_ANALYZER: return '剧目分析';
           case NodeType.DRAMA_REFINED: return '剧目精炼';
@@ -457,16 +460,47 @@ export const App = () => {
           return;
       }
       try { saveHistory(); } catch (e) { }
-      const defaults: any = { 
-          model: type === NodeType.VIDEO_GENERATOR ? 'veo-3.1-fast-generate-preview' :
-                 type === NodeType.VIDEO_ANALYZER ? 'gemini-3-pro-preview' :
-                 type === NodeType.AUDIO_GENERATOR ? 'gemini-2.5-flash-preview-tts' :
-                 type === NodeType.SCRIPT_PLANNER ? 'gemini-2.5-flash' :
-                 type === NodeType.SCRIPT_EPISODE ? 'gemini-2.5-flash' :
-                 type === NodeType.STORYBOARD_GENERATOR ? 'gemini-3-pro-preview' :
-                 type === NodeType.CHARACTER_NODE ? 'gemini-3-pro-preview' :
-                 type.includes('IMAGE') ? 'gemini-2.5-flash-image' :
-                 'gemini-3-pro-preview',
+
+      // 从 localStorage 读取用户配置的默认模型
+      const defaultImageModel = localStorage.getItem('default_image_model') || 'gemini-2.5-flash-image';
+      const defaultVideoModel = localStorage.getItem('default_video_model') || 'veo-3.1-fast-generate-preview';
+      const defaultTextModel = localStorage.getItem('default_text_model') || 'gemini-2.5-flash';
+      const defaultAudioModel = localStorage.getItem('default_audio_model') || 'gemini-2.5-flash-preview-tts';
+
+      // 根据节点类型选择合适的默认模型
+      const getDefaultModel = () => {
+          switch (type) {
+              // 视频生成节点
+              case NodeType.VIDEO_GENERATOR:
+                  return defaultVideoModel;
+
+              // 图片生成节点
+              case NodeType.IMAGE_GENERATOR:
+              case NodeType.STORYBOARD_IMAGE:
+                  return defaultImageModel;
+
+              // 音频生成节点
+              case NodeType.AUDIO_GENERATOR:
+                  return defaultAudioModel;
+
+              // 文本处理节点（分析、剧本等）
+              case NodeType.VIDEO_ANALYZER:
+              case NodeType.SCRIPT_PLANNER:
+              case NodeType.SCRIPT_EPISODE:
+              case NodeType.STORYBOARD_GENERATOR:
+              case NodeType.CHARACTER_NODE:
+              case NodeType.DRAMA_ANALYZER:
+              case NodeType.STYLE_PRESET:
+                  return defaultTextModel;
+
+              // 其他节点根据是否包含 IMAGE 判断
+              default:
+                  return type.includes('IMAGE') ? defaultImageModel : defaultTextModel;
+          }
+      };
+
+      const defaults: any = {
+          model: getDefaultModel(),
           generationMode: type === NodeType.VIDEO_GENERATOR ? 'DEFAULT' : undefined,
           scriptEpisodes: type === NodeType.SCRIPT_PLANNER ? 10 : undefined,
           scriptDuration: type === NodeType.SCRIPT_PLANNER ? 1 : undefined,
@@ -477,7 +511,7 @@ export const App = () => {
           storyboardStyle: type === NodeType.STORYBOARD_GENERATOR ? 'REAL' : undefined,
           ...initialData
       };
-      
+
       const safeX = x !== undefined ? x : (-canvas.pan.x + window.innerWidth/2)/canvas.scale - 210;
       const safeY = y !== undefined ? y : (-canvas.pan.y + window.innerHeight/2)/canvas.scale - 180;
 
@@ -486,10 +520,10 @@ export const App = () => {
         type,
         x: isNaN(safeX) ? 100 : safeX,
         y: isNaN(safeY) ? 100 : safeY,
-        width: 420, 
-        title: getNodeNameCN(type), 
-        status: NodeStatus.IDLE, 
-        data: defaults, 
+        width: 420,
+        title: getNodeNameCN(type),
+        status: NodeStatus.IDLE,
+        data: defaults,
         inputs: []
       };
       setNodes(prev => [...prev, newNode]);
@@ -812,13 +846,86 @@ export const App = () => {
       return base;
   };
 
-  // Helper to get unified style context from upstream
+  // Helper to recursively collect upstream context
+  const getUpstreamContext = (node: AppNode, allNodes: AppNode[], visited: Set<string> = new Set()): string[] => {
+      if (visited.has(node.id)) return [];
+      visited.add(node.id);
+
+      const texts: string[] = [];
+      const inputs = node.inputs.map(i => allNodes.find(n => n.id === i)).filter(Boolean) as AppNode[];
+
+      for (const inputNode of inputs) {
+          // Collect content from this node
+          if (inputNode.type === NodeType.PROMPT_INPUT && inputNode.data.prompt) {
+              texts.push(inputNode.data.prompt);
+          } else if (inputNode.type === NodeType.VIDEO_ANALYZER && inputNode.data.analysis) {
+              texts.push(inputNode.data.analysis);
+          } else if (inputNode.type === NodeType.SCRIPT_EPISODE && inputNode.data.generatedEpisodes) {
+              texts.push(inputNode.data.generatedEpisodes.map(ep => `${ep.title}\n角色: ${ep.characters}`).join('\n'));
+          } else if (inputNode.type === NodeType.SCRIPT_PLANNER && inputNode.data.scriptOutline) {
+              // Include script outline (may contain character backstories)
+              texts.push(inputNode.data.scriptOutline);
+          } else if (inputNode.type === NodeType.DRAMA_ANALYZER) {
+              const selected = inputNode.data.selectedFields || [];
+              if (selected.length > 0) {
+                  const fieldLabels: Record<string, string> = {
+                      dramaIntroduction: '剧集介绍',
+                      worldview: '世界观分析',
+                      logicalConsistency: '逻辑自洽性',
+                      extensibility: '延展性分析',
+                      characterTags: '角色标签',
+                      protagonistArc: '主角弧光',
+                      audienceResonance: '受众共鸣点',
+                      artStyle: '画风分析'
+                  };
+                  const parts = selected.map(fieldKey => {
+                      const value = inputNode.data[fieldKey as keyof typeof inputNode.data] as string || '';
+                      const label = fieldLabels[fieldKey] || fieldKey;
+                      return `【${label}】\n${value}`;
+                  });
+                  texts.push(parts.join('\n\n'));
+              }
+          } else if (inputNode.type === NodeType.DRAMA_REFINED && inputNode.data.refinedContent) {
+              // Include refined content if available
+              const refined = inputNode.data.refinedContent;
+              if (refined.characterTags) texts.push(`角色标签: ${refined.characterTags.join(', ')}`);
+          }
+
+          // Recursively collect from upstream nodes
+          const upstreamTexts = getUpstreamContext(inputNode, allNodes, visited);
+          texts.push(...upstreamTexts);
+      }
+
+      return texts;
+  };
+
+  // Helper to get unified style context from upstream (with recursive tracing)
   const getUpstreamStyleContext = (node: AppNode, allNodes: AppNode[]): { style: string, genre: string, setting: string } => {
       const inputs = node.inputs.map(i => allNodes.find(n => n.id === i)).filter(Boolean) as AppNode[];
       let style = node.data.scriptVisualStyle || 'REAL';
       let genre = '';
       let setting = '';
 
+      // Function to recursively find SCRIPT_PLANNER
+      const findPlannerRecursive = (currentNode: AppNode, visited: Set<string> = new Set()): AppNode | null => {
+          if (visited.has(currentNode.id)) return null;
+          visited.add(currentNode.id);
+
+          if (currentNode.type === NodeType.SCRIPT_PLANNER) {
+              return currentNode;
+          }
+
+          // Check inputs of current node
+          const currentInputs = currentNode.inputs.map(i => allNodes.find(n => n.id === i)).filter(Boolean) as AppNode[];
+          for (const inputNode of currentInputs) {
+              const found = findPlannerRecursive(inputNode, visited);
+              if (found) return found;
+          }
+
+          return null;
+      };
+
+      // First, try to find SCRIPT_EPISODE or SCRIPT_PLANNER directly in inputs
       const episodeNode = inputs.find(n => n.type === NodeType.SCRIPT_EPISODE);
       const plannerNode = inputs.find(n => n.type === NodeType.SCRIPT_PLANNER);
 
@@ -835,13 +942,31 @@ export const App = () => {
           if (plannerNode.data.scriptVisualStyle) style = plannerNode.data.scriptVisualStyle;
           genre = plannerNode.data.scriptGenre || '';
           setting = plannerNode.data.scriptSetting || '';
+      } else {
+          // If no direct SCRIPT_EPISODE or SCRIPT_PLANNER found, recursively search upstream
+          // This handles cases like: CHARACTER_NODE -> PROMPT_INPUT -> SCRIPT_EPISODE -> SCRIPT_PLANNER
+          for (const inputNode of inputs) {
+              const foundPlanner = findPlannerRecursive(inputNode);
+              if (foundPlanner) {
+                  if (foundPlanner.data.scriptVisualStyle) style = foundPlanner.data.scriptVisualStyle;
+                  genre = foundPlanner.data.scriptGenre || '';
+                  setting = foundPlanner.data.scriptSetting || '';
+                  console.log(`[getUpstreamStyleContext] Found SCRIPT_PLANNER recursively:`, {
+                      style,
+                      genre,
+                      setting,
+                      plannerId: foundPlanner.id
+                  });
+                  break;
+              }
+          }
       }
-      
+
       return { style, genre, setting };
   };
 
   // --- Character Action Handler ---
-  const handleCharacterAction = async (nodeId: string, action: 'DELETE' | 'SAVE' | 'RETRY', charName: string) => {
+  const handleCharacterAction = async (nodeId: string, action: 'DELETE' | 'SAVE' | 'RETRY' | 'GENERATE_EXPRESSION' | 'GENERATE_THREE_VIEW' | 'GENERATE_SINGLE', charName: string) => {
       const node = nodesRef.current.find(n => n.id === nodeId);
       if (!node) return;
 
@@ -852,7 +977,7 @@ export const App = () => {
           const newExtracted = extracted.filter(n => n !== charName);
           const newGenerated = generated.filter(c => c.name !== charName);
           handleNodeUpdate(nodeId, { extractedCharacterNames: newExtracted, generatedCharacters: newGenerated });
-      } 
+      }
       
       else if (action === 'SAVE') {
           // Trigger 3-View generation if missing, then Save
@@ -966,8 +1091,8 @@ export const App = () => {
       } 
       
       else if (action === 'RETRY') {
-          // Reset status and regenerate Expression Sheet ONLY
-          const updatedGenerated = generated.map(c => c.name === charName ? { ...c, status: 'GENERATING' as const, error: undefined, isSaved: false } : c);
+          // RETRY: Regenerate character profile info only (no images)
+          const updatedGenerated = generated.map(c => c.name === charName ? { ...c, status: 'GENERATING' as const, error: undefined } : c);
           handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
 
           const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
@@ -975,22 +1100,18 @@ export const App = () => {
               if (n?.type === NodeType.PROMPT_INPUT) return n.data.prompt;
               if (n?.type === NodeType.VIDEO_ANALYZER) return n.data.analysis;
               if (n?.type === NodeType.SCRIPT_EPISODE && n.data.generatedEpisodes) {
-                  // 只传递角色列表和标题，不传完整剧本内容
                   return n.data.generatedEpisodes.map(ep => `${ep.title}\n角色: ${ep.characters}`).join('\n');
               }
               if (n?.type === NodeType.SCRIPT_PLANNER) return n.data.scriptOutline;
               return null;
           }).filter(t => t && t.trim().length > 0) as string[];
 
-          // Extract style preset from inputs (priority: STYLE_PRESET > upstream context)
           const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
           let stylePrompt = '';
 
           if (stylePresetNode?.data.stylePrompt) {
-              // Use style preset if connected
               stylePrompt = stylePresetNode.data.stylePrompt;
           } else {
-              // Fallback to unified helper
               const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
               stylePrompt = getVisualPromptPrefix(style, genre, setting);
           }
@@ -1000,41 +1121,359 @@ export const App = () => {
           const customDesc = config.method === 'AI_CUSTOM' ? config.customPrompt : undefined;
 
           try {
-              // Use style prompt from STYLE_PRESET or upstream context
-              const profile = await generateCharacterProfile(charName, context, stylePrompt, customDesc);
-              profile.status = 'GENERATING'; 
-              
-              const currentList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
-              const idx = currentList.findIndex(c => c.name === charName);
-              if (idx >= 0) currentList[idx] = profile; else currentList.push(profile);
-              handleNodeUpdate(nodeId, { generatedCharacters: currentList });
+              const profile = await generateCharacterProfile(
+                  charName,
+                  context,
+                  stylePrompt,
+                  customDesc,
+                  { nodeId: nodeId, nodeType: node.type }
+              );
 
-              const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui";
-              
-              // Generate Expression Sheet
-              const exprPrompt = `
-              ${stylePrompt}
-              Character Reference Sheet, 3x3 grid layout showing 9 different facial expressions (joy, anger, sorrow, surprise, fear, disgust, neutral, thinking, tired).
-              Subject: ${profile.appearance}.
-              Attributes: ${profile.basicStats}.
-              White background, consistent character design.
-              Composition: 3x3 grid.
-              Negative: ${negativePrompt}.
-              `;
-              const exprImages = await generateImageFromText(exprPrompt, 'gemini-2.5-flash-image', [], { aspectRatio: '1:1', count: 1 });
-              profile.expressionSheet = exprImages[0];
-              profile.status = 'SUCCESS';
-              
               const finalList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
               const fIdx = finalList.findIndex(c => c.name === charName);
-              if (fIdx >= 0) finalList[fIdx] = profile;
+              if (fIdx >= 0) {
+                  // Phase 1 complete
+                  finalList[fIdx] = {
+                      ...profile,
+                      status: 'SUCCESS' as const
+                  };
+              }
               handleNodeUpdate(nodeId, { generatedCharacters: finalList });
-
           } catch (e: any) {
               const failList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
               const failIdx = failList.findIndex(c => c.name === charName);
               if (failIdx >= 0) failList[failIdx] = { ...failList[failIdx], status: 'ERROR', error: e.message };
               handleNodeUpdate(nodeId, { generatedCharacters: failList });
+          }
+      }
+
+      else if (action === 'GENERATE_EXPRESSION') {
+          // Phase 2A: Generate expression sheet only
+          let char = generated.find(c => c.name === charName);
+          if (!char) return;
+
+          // Mark as generating
+          const updatedGenerated = generated.map(c => c.name === charName ? { ...c, isGeneratingExpression: true } : c);
+          handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
+
+          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
+          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+          let stylePrompt = '';
+
+          if (stylePresetNode?.data.stylePrompt) {
+              stylePrompt = stylePresetNode.data.stylePrompt;
+          } else {
+              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
+              stylePrompt = getVisualPromptPrefix(style, genre, setting);
+          }
+
+          try {
+              const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui";
+
+              let styleNegative = "";
+              const { style: detectedStyle } = getUpstreamStyleContext(node, nodesRef.current);
+              if (detectedStyle === 'REAL') {
+                  styleNegative = ", anime, cartoon, illustrated, 3d render, cgi, painting, drawing";
+              } else if (detectedStyle === 'ANIME') {
+                  styleNegative = ", photorealistic, realistic, photo, 3d, cgi, live action";
+              } else if (detectedStyle === '3D') {
+                  styleNegative = ", 2d, flat, anime, photo, painting, illustrated";
+              }
+
+              const exprPrompt = `
+              ${stylePrompt}
+
+              PORTRAIT COMPOSITION: Extreme close-up, head and shoulders only, facial expressions focus.
+
+              Character facial expressions reference sheet, 3x3 grid layout showing 9 different facial expressions (joy, anger, sorrow, surprise, fear, disgust, neutral, thinking, tired).
+
+              Character Face Description: ${char.appearance}.
+
+              CRITICAL CONSTRAINTS:
+              - Close-up portrait shots ONLY (head and shoulders)
+              - NO full body, NO lower body, NO legs
+              - Focus on facial features, expressions, and head
+              - White or neutral background
+              - Consistent character design across all 9 expressions
+              - 3x3 grid composition
+
+              Negative Prompt: ${negativePrompt}${styleNegative}, full body, standing, legs, feet, full-length portrait, wide shot, environmental background
+              `;
+
+              const exprImages = await generateImageFromText(
+                  exprPrompt,
+                  'gemini-2.5-flash-image',
+                  [],
+                  { aspectRatio: '1:1', count: 1 },
+                  { nodeId: nodeId, nodeType: node.type }
+              );
+
+              if (!exprImages || exprImages.length === 0) {
+                  throw new Error('表情图生成失败：API未返回图片数据');
+              }
+
+              // Update character with expression sheet
+              const finalList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
+              const fIdx = finalList.findIndex(c => c.name === charName);
+              if (fIdx >= 0) {
+                  finalList[fIdx] = { ...finalList[fIdx], expressionSheet: exprImages[0], isGeneratingExpression: false };
+              }
+              handleNodeUpdate(nodeId, { generatedCharacters: finalList });
+          } catch (e: any) {
+              const failList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
+              const failIdx = failList.findIndex(c => c.name === charName);
+              if (failIdx >= 0) {
+                  failList[failIdx] = { ...failList[failIdx], isGeneratingExpression: false, expressionError: e.message };
+              }
+              handleNodeUpdate(nodeId, { generatedCharacters: failList });
+          }
+      }
+
+      else if (action === 'GENERATE_THREE_VIEW') {
+          // Phase 2B: Generate three-view sheet only
+          let char = generated.find(c => c.name === charName);
+          if (!char) return;
+
+          // Mark as generating
+          const updatedGenerated = generated.map(c => c.name === charName ? { ...c, isGeneratingThreeView: true } : c);
+          handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
+
+          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
+          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+          let stylePrefix = '';
+
+          if (stylePresetNode?.data.stylePrompt) {
+              stylePrefix = stylePresetNode.data.stylePrompt;
+          } else {
+              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
+              stylePrefix = getVisualPromptPrefix(style, genre, setting);
+          }
+
+          try {
+              const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
+
+              const viewPrompt = `
+              ${stylePrefix}
+              Character Three-View Reference Sheet (Front, Side, Back).
+              Subject: ${char.appearance}.
+              Attributes: ${char.basicStats}.
+              Full body standing pose, neutral expression.
+              Clean white background.
+
+              IMPORTANT REQUIREMENTS:
+              - PURE IMAGE ONLY.
+              - NO TEXT, NO LABELS, NO WRITING.
+              - NO "FRONT VIEW" or "SIDE VIEW" labels.
+              - NO info boxes or character stats.
+              - Reference the character in the input image strictly. Maintain facial features, hair color, and clothing style.
+
+              Negative: ${negativePrompt}.
+              `;
+
+              const inputImages = char.expressionSheet ? [char.expressionSheet] : [];
+
+              let viewImages: string[] = [];
+              let hasText = true;
+              let attempt = 0;
+              const MAX_ATTEMPTS = 3;
+
+              while (hasText && attempt < MAX_ATTEMPTS) {
+                  if (attempt > 0) {
+                      const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
+                      viewImages = await generateImageFromText(
+                          retryPrompt,
+                          'gemini-2.5-flash-image',
+                          inputImages,
+                          { aspectRatio: '3:4', count: 1 },
+                          { nodeId: nodeId, nodeType: node.type }
+                      );
+                  } else {
+                      viewImages = await generateImageFromText(
+                          viewPrompt,
+                          'gemini-2.5-flash-image',
+                          inputImages,
+                          { aspectRatio: '3:4', count: 1 },
+                          { nodeId: nodeId, nodeType: node.type }
+                      );
+                  }
+
+                  if (viewImages.length > 0) {
+                      hasText = await detectTextInImage(viewImages[0]);
+                      if (hasText) {
+                          console.log(`Text detected in generated 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+                      }
+                  }
+                  attempt++;
+              }
+
+              // Update character with three-view sheet
+              const finalList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
+              const fIdx = finalList.findIndex(c => c.name === charName);
+              if (fIdx >= 0) {
+                  finalList[fIdx] = { ...finalList[fIdx], threeViewSheet: viewImages[0], isGeneratingThreeView: false };
+              }
+              handleNodeUpdate(nodeId, { generatedCharacters: finalList });
+          } catch (e: any) {
+              const failList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
+              const failIdx = failList.findIndex(c => c.name === charName);
+              if (failIdx >= 0) {
+                  failList[failIdx] = { ...failList[failIdx], isGeneratingThreeView: false, threeViewError: e.message };
+              }
+              handleNodeUpdate(nodeId, { generatedCharacters: failList });
+          }
+      }
+
+      else if (action === 'GENERATE_SINGLE') {
+          // Generate single character on-demand
+          const configs = node.data.characterConfigs || {};
+          const config = configs[charName] || { method: 'AI_AUTO' };
+
+          // Get upstream context using recursive tracing
+          const recursiveUpstreamTexts = getUpstreamContext(node, nodesRef.current);
+          const context = recursiveUpstreamTexts.join('\n');
+
+          console.log('[GENERATE_SINGLE] Collected upstream context:', {
+              charName,
+              textCount: recursiveUpstreamTexts.length,
+              totalLength: context.length
+          });
+
+          // Extract style preset from inputs (priority: STYLE_PRESET > upstream context)
+          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
+          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
+          let stylePrompt = '';
+
+          if (stylePresetNode?.data.stylePrompt) {
+              stylePrompt = stylePresetNode.data.stylePrompt;
+          } else {
+              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
+              stylePrompt = getVisualPromptPrefix(style, genre, setting);
+          }
+
+          // Initialize character in GENERATING state
+          let charProfile = generated.find(c => c.name === charName);
+          if (!charProfile) {
+              charProfile = { id: '', name: charName, status: 'GENERATING' } as any;
+              generated.push(charProfile!);
+          } else {
+              charProfile.status = 'GENERATING';
+          }
+          handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
+
+          try {
+              if (config.method === 'LIBRARY' && config.libraryId) {
+                  // Use library character
+                  const libChar = assetHistory.find(a => a.id === config.libraryId && a.type === 'character');
+                  if (libChar) {
+                      const idx = generated.findIndex(c => c.name === charName);
+                      generated[idx] = { ...libChar.data, id: `char-inst-${Date.now()}-${charName}`, status: 'SUCCESS' };
+                      handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
+                  }
+              } else if (config.method === 'SUPPORTING_ROLE') {
+                  // Generate supporting character
+                  const { generateSupportingCharacter, generateImageFromText, detectTextInImage } = await import('./services/geminiService');
+
+                  const profile = await generateSupportingCharacter(
+                      charName,
+                      context,
+                      stylePrompt,
+                      { nodeId: nodeId, nodeType: node.type }
+                  );
+
+                  const idx = generated.findIndex(c => c.name === charName);
+                  generated[idx] = {
+                      ...profile,
+                      status: 'GENERATING' as const,
+                      roleType: 'supporting'
+                  };
+                  handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
+
+                  // Auto-generate Three-View
+                  const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
+
+                  const viewPrompt = `
+                  ${stylePrompt}
+                  Character Three-View Reference Sheet (Front, Side, Back).
+                  Subject: ${profile.appearance}.
+                  Attributes: ${profile.basicStats}.
+                  Full body standing pose, neutral expression.
+                  Clean white background.
+
+                  IMPORTANT REQUIREMENTS:
+                  - PURE IMAGE ONLY.
+                  - NO TEXT, NO LABELS, NO WRITING.
+                  - NO "FRONT VIEW" or "SIDE VIEW" labels.
+                  - NO info boxes or character stats.
+
+                  Negative: ${negativePrompt}.
+                  `;
+
+                  let viewImages: string[] = [];
+                  let hasText = true;
+                  let attempt = 0;
+                  const MAX_ATTEMPTS = 3;
+
+                  while (hasText && attempt < MAX_ATTEMPTS) {
+                      if (attempt > 0) {
+                          const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
+                          viewImages = await generateImageFromText(
+                              retryPrompt,
+                              'gemini-2.5-flash-image',
+                              [],
+                              { aspectRatio: '3:4', count: 1 },
+                              { nodeId: nodeId, nodeType: node.type }
+                          );
+                      } else {
+                          viewImages = await generateImageFromText(
+                              viewPrompt,
+                              'gemini-2.5-flash-image',
+                              [],
+                              { aspectRatio: '3:4', count: 1 },
+                              { nodeId: nodeId, nodeType: node.type }
+                          );
+                      }
+
+                      if (viewImages.length > 0) {
+                          hasText = await detectTextInImage(viewImages[0]);
+                          if (hasText) {
+                              console.log(`[GENERATE_SINGLE] Text detected in supporting 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
+                          }
+                      }
+                      attempt++;
+                  }
+
+                  const finalIdx = generated.findIndex(c => c.name === charName);
+                  generated[finalIdx] = {
+                      ...generated[finalIdx],
+                      threeViewSheet: viewImages[0],
+                      status: 'SUCCESS' as const
+                  };
+                  handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
+
+              } else {
+                  // Generate main character (AI_AUTO or AI_CUSTOM)
+                  const customDesc = config.method === 'AI_CUSTOM' ? config.customPrompt : undefined;
+
+                  const profile = await generateCharacterProfile(
+                      charName,
+                      context,
+                      stylePrompt,
+                      customDesc,
+                      { nodeId: nodeId, nodeType: node.type }
+                  );
+
+                  const idx = generated.findIndex(c => c.name === charName);
+                  generated[idx] = {
+                      ...profile,
+                      status: 'SUCCESS' as const,
+                      roleType: 'main'
+                  };
+                  handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
+              }
+          } catch (e: any) {
+              const idx = generated.findIndex(c => c.name === charName);
+              generated[idx] = { ...generated[idx], status: 'ERROR', error: e.message };
+              handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
           }
       }
   };
@@ -1224,20 +1663,64 @@ export const App = () => {
           } else if (node.type === NodeType.CHARACTER_NODE) {
               // --- Character Node Generation Logic ---
 
+              // For character name extraction: Use ONLY direct inputs (not recursive)
+              const directUpstreamTexts = inputs.map(n => {
+                  if (n?.type === NodeType.PROMPT_INPUT) return n.data.prompt;
+                  if (n?.type === NodeType.VIDEO_ANALYZER) return n.data.analysis;
+                  if (n?.type === NodeType.SCRIPT_EPISODE && n.data.generatedEpisodes) {
+                      return n.data.generatedEpisodes.map(ep => `${ep.title}\n角色: ${ep.characters}`).join('\n');
+                  }
+                  if (n?.type === NodeType.SCRIPT_PLANNER) return n.data.scriptOutline;
+                  if (n?.type === NodeType.DRAMA_ANALYZER) {
+                      const selected = n.data.selectedFields || [];
+                      if (selected.length === 0) return null;
+                      const fieldLabels: Record<string, string> = {
+                          dramaIntroduction: '剧集介绍',
+                          worldview: '世界观分析',
+                          logicalConsistency: '逻辑自洽性',
+                          extensibility: '延展性分析',
+                          characterTags: '角色标签',
+                          protagonistArc: '主角弧光',
+                          audienceResonance: '受众共鸣点',
+                          artStyle: '画风分析'
+                      };
+                      const parts = selected.map(fieldKey => {
+                          const value = n.data[fieldKey as keyof typeof n.data] as string || '';
+                          const label = fieldLabels[fieldKey] || fieldKey;
+                          return `【${label}】\n${value}`;
+                      });
+                      return parts.join('\n\n');
+                  }
+                  return null;
+              }).filter(t => t && t.trim().length > 0) as string[];
+
+              // For character info generation: Use recursive upstream context (includes SCRIPT_PLANNER, etc.)
+              const recursiveUpstreamTexts = getUpstreamContext(node, nodesRef.current);
+
+              console.log('[CHARACTER_NODE] Context collection:', {
+                  nodeId: id,
+                  directTextCount: directUpstreamTexts.length,
+                  recursiveTextCount: recursiveUpstreamTexts.length,
+                  directLength: directUpstreamTexts.join('\n').length,
+                  recursiveLength: recursiveUpstreamTexts.join('\n').length
+              });
+
               if (!node.data.extractedCharacterNames || node.data.extractedCharacterNames.length === 0) {
-                  if (upstreamTexts.length > 0) {
-                      // Extract character names from ALL connected inputs
+                  // STEP 1: Extract character names from DIRECT inputs only
+                  if (directUpstreamTexts.length > 0) {
                       const allCharacterNames: string[] = [];
 
-                      for (const text of upstreamTexts) {
+                      for (const text of directUpstreamTexts) {
                           const names = await extractCharactersFromText(text);
                           allCharacterNames.push(...names);
                       }
 
-                      // Deduplicate character names (case-insensitive)
                       const uniqueNames = Array.from(new Set(allCharacterNames.map(name => name.trim()))).filter(name => name.length > 0);
 
-                      console.log('[CHARACTER_NODE] Extracted characters from', upstreamTexts.length, 'inputs:', uniqueNames);
+                      console.log('[CHARACTER_NODE] Extracted characters from DIRECT inputs only:', {
+                          inputCount: directUpstreamTexts.length,
+                          characters: uniqueNames
+                      });
 
                       handleNodeUpdate(id, { extractedCharacterNames: uniqueNames, characterConfigs: {} });
                       setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
@@ -1247,6 +1730,7 @@ export const App = () => {
                   }
               }
 
+              // STEP 2: Generate character info using RECURSIVE context (includes all upstream content)
               const names = node.data.extractedCharacterNames || [];
               const configs = node.data.characterConfigs || {};
               const generatedChars = node.data.generatedCharacters || [];
@@ -1267,13 +1751,13 @@ export const App = () => {
 
               for (const name of names) {
                   const config = configs[name] || { method: 'AI_AUTO' };
-                  
+
                   // Skip if already generated successfully
                   if (newGeneratedChars.find(c => c.name === name && c.status === 'SUCCESS')) continue;
 
                   let charProfile = newGeneratedChars.find(c => c.name === name);
                   if (!charProfile) {
-                      charProfile = { id: '', name, status: 'GENERATING' } as any; 
+                      charProfile = { id: '', name, status: 'GENERATING' } as any;
                       newGeneratedChars.push(charProfile!);
                   } else {
                       charProfile.status = 'GENERATING';
@@ -1286,46 +1770,148 @@ export const App = () => {
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
                           newGeneratedChars[idx] = { ...libChar.data, id: `char-inst-${Date.now()}-${name}`, status: 'SUCCESS' };
                       }
+                  } else if (config.method === 'SUPPORTING_ROLE') {
+                      // SUPPORTING CHARACTER: Use recursive context for generation
+                      const context = recursiveUpstreamTexts.join('\n');
+
+                      console.log('[CHARACTER_NODE] Generating supporting character with recursive context:', {
+                          name,
+                          contextLength: context.length
+                      });
+
+                      try {
+                          // Import the supporting character generator
+                          const { generateSupportingCharacter, generateImageFromText, detectTextInImage } = await import('./services/geminiService');
+
+                          // Step 1: Generate simplified profile
+                          const profile = await generateSupportingCharacter(
+                              name,
+                              context,
+                              stylePrompt,
+                              { nodeId: id, nodeType: node.type }
+                          );
+
+                          const idx = newGeneratedChars.findIndex(c => c.name === name);
+                          newGeneratedChars[idx] = {
+                              ...profile,
+                              status: 'GENERATING' as const,
+                              roleType: 'supporting'
+                          };
+                          handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
+
+                          console.log('[CHARACTER_NODE] Supporting character profile generated, now generating three-view...');
+
+                          // Step 2: Auto-generate Three-View (no expression sheet for supporting chars)
+                          const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
+
+                          const viewPrompt = `
+                          ${stylePrompt}
+                          Character Three-View Reference Sheet (Front, Side, Back).
+                          Subject: ${profile.appearance}.
+                          Attributes: ${profile.basicStats}.
+                          Full body standing pose, neutral expression.
+                          Clean white background.
+
+                          IMPORTANT REQUIREMENTS:
+                          - PURE IMAGE ONLY.
+                          - NO TEXT, NO LABELS, NO WRITING.
+                          - NO "FRONT VIEW" or "SIDE VIEW" labels.
+                          - NO info boxes or character stats.
+
+                          Negative: ${negativePrompt}.
+                          `;
+
+                          let viewImages: string[] = [];
+                          let hasText = true;
+                          let attempt = 0;
+                          const MAX_ATTEMPTS = 3;
+
+                          while (hasText && attempt < MAX_ATTEMPTS) {
+                              if (attempt > 0) {
+                                  const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
+                                  viewImages = await generateImageFromText(
+                                      retryPrompt,
+                                      'gemini-2.5-flash-image',
+                                      [],
+                                      { aspectRatio: '3:4', count: 1 },
+                                      { nodeId: id, nodeType: node.type }
+                                  );
+                              } else {
+                                  viewImages = await generateImageFromText(
+                                      viewPrompt,
+                                      'gemini-2.5-flash-image',
+                                      [],
+                                      { aspectRatio: '3:4', count: 1 },
+                                      { nodeId: id, nodeType: node.type }
+                                  );
+                              }
+
+                              if (viewImages.length > 0) {
+                                  hasText = await detectTextInImage(viewImages[0]);
+                                  if (hasText) {
+                                      console.log(`Text detected in supporting character 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+                                  }
+                              }
+                              attempt++;
+                          }
+
+                          // Update with three-view
+                          const finalIdx = newGeneratedChars.findIndex(c => c.name === name);
+                          newGeneratedChars[finalIdx] = {
+                              ...newGeneratedChars[finalIdx],
+                              threeViewSheet: viewImages[0],
+                              status: 'SUCCESS' as const
+                          };
+
+                          console.log('[CHARACTER_NODE] Supporting character complete (profile + three-view):', {
+                              name,
+                              hasThreeView: !!viewImages[0],
+                              roleType: 'supporting'
+                          });
+                      } catch (e: any) {
+                          const idx = newGeneratedChars.findIndex(c => c.name === name);
+                          newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e.message };
+                      }
                   } else {
-                      const context = upstreamTexts.join('\n');
+                      const context = recursiveUpstreamTexts.join('\n');
                       const customDesc = config.method === 'AI_CUSTOM' ? config.customPrompt : undefined;
 
                       try {
+                          // PHASE 1: Generate character profile info only (no images)
                           // Use style prompt from STYLE_PRESET or upstream context
-                          const profile = await generateCharacterProfile(name, context, stylePrompt, customDesc);
-                          profile.status = 'GENERATING';
-                          
+                          const profile = await generateCharacterProfile(
+                              name,
+                              context,
+                              stylePrompt,
+                              customDesc,
+                              { nodeId: id, nodeType: node.type }
+                          );
+
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
-                          newGeneratedChars[idx] = profile;
-                          handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
-
-                          const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui";
-                          
-                          // Generate Expression Sheet
-                          // CRITICAL: Prepend Style Prompt to ensure visual match
-                          const exprPrompt = `
-                          ${stylePrompt}
-                          Character Reference Sheet, 3x3 grid layout showing 9 different facial expressions (joy, anger, sorrow, surprise, fear, disgust, neutral, thinking, tired).
-                          Subject: ${profile.appearance}.
-                          Attributes: ${profile.basicStats}.
-                          White background, consistent character design.
-                          Composition: 3x3 grid.
-                          Negative: ${negativePrompt}.
-                          `;
-                          const exprImages = await generateImageFromText(exprPrompt, 'gemini-2.5-flash-image', [], { aspectRatio: '1:1', count: 1 });
-                          profile.expressionSheet = exprImages[0];
-
-                          profile.status = 'SUCCESS';
-                          newGeneratedChars[idx] = profile;
+                          // ✅ Phase 1 complete - user can review info
+                          newGeneratedChars[idx] = {
+                              ...profile,
+                              status: 'SUCCESS' as const,
+                              roleType: 'main'
+                          };
+                          console.log('[CHARACTER_NODE] Profile generated successfully:', {
+                              name,
+                              status: newGeneratedChars[idx].status,
+                              hasProfile: !!newGeneratedChars[idx],
+                              profession: newGeneratedChars[idx].profession,
+                              personality: newGeneratedChars[idx].personality?.substring(0, 50)
+                          });
+                          // No expression sheet or three-view generation here
+                          // User will generate them on-demand in the detail modal
                       } catch (e: any) {
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
                           newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e.message };
                       }
                   }
-                  
+
+                  // Update after each character is processed (for real-time feedback)
                   handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
               }
-              handleNodeUpdate(id, { generatedCharacters: newGeneratedChars });
 
           } else if (node.type === NodeType.STYLE_PRESET) {
               // --- Style Preset Generation Logic ---
@@ -1522,7 +2108,13 @@ export const App = () => {
                       }
                   } catch (e) { console.warn("Storyboard planning failed", e); }
                }
-              const res = await generateImageFromText(finalPrompt, node.data.model, inputImages, { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount });
+              const res = await generateImageFromText(
+                  finalPrompt,
+                  node.data.model,
+                  inputImages,
+                  { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount },
+                  { nodeId: id, nodeType: node.type }
+              );
               handleNodeUpdate(id, { image: res[0], images: res });
 
           } else if (node.type === NodeType.VIDEO_GENERATOR) {
@@ -1534,16 +2126,17 @@ export const App = () => {
               const strategy = await getGenerationStrategy(node, inputs, finalPrompt);
               const res = await generateVideo(
                   strategy.finalPrompt,
-                  node.data.model, 
-                  { 
-                      aspectRatio: node.data.aspectRatio || '16:9', 
-                      count: node.data.videoCount || 1, 
+                  node.data.model,
+                  {
+                      aspectRatio: node.data.aspectRatio || '16:9',
+                      count: node.data.videoCount || 1,
                       generationMode: strategy.generationMode,
-                      resolution: node.data.resolution 
-                  }, 
-                  strategy.inputImageForGeneration, 
-                  strategy.videoInput, 
-                  strategy.referenceImages
+                      resolution: node.data.resolution
+                  },
+                  strategy.inputImageForGeneration,
+                  strategy.videoInput,
+                  strategy.referenceImages,
+                  { nodeId: id, nodeType: node.type }
               );
               if (res.isFallbackImage) {
                    handleNodeUpdate(id, { 
@@ -1610,6 +2203,187 @@ export const App = () => {
               };
 
               await Promise.all(updatedShots.map((_, i) => processShotImage(i)));
+
+          } else if (node.type === NodeType.STORYBOARD_IMAGE) {
+              // Get storyboard content from input or connected nodes
+              let storyboardContent = prompt.trim();
+
+              // Check if there's a connected PROMPT_INPUT node with episodeStoryboard data
+              const promptInputNode = inputs.find(n => n.type === NodeType.PROMPT_INPUT);
+              if (promptInputNode?.data.episodeStoryboard) {
+                  const storyboard = promptInputNode.data.episodeStoryboard;
+                  console.log('[STORYBOARD_IMAGE] Found episodeStoryboard from PROMPT_INPUT:', {
+                      shotCount: storyboard.shots?.length || 0,
+                      totalDuration: storyboard.totalDuration
+                  });
+
+                  // Convert episodeStoryboard to JSON format for parsing
+                  storyboardContent = JSON.stringify({
+                      shots: storyboard.shots.map((shot: any) => ({
+                          visualDescription: shot.visualDescription,
+                          scene: shot.scene,
+                          shotType: shot.shotType,
+                          cameraAngle: shot.cameraAngle,
+                          cameraMovement: shot.cameraMovement
+                      }))
+                  });
+              }
+
+              if (!storyboardContent) {
+                  throw new Error("请输入分镜描述或连接剧本分集子节点");
+              }
+
+              console.log('[STORYBOARD_IMAGE] Processing content:', {
+                  contentLength: storyboardContent.length,
+                  inputCount: inputs.length,
+                  hasEpisodeStoryboard: !!promptInputNode?.data.episodeStoryboard
+              });
+
+              // Extract character reference images from upstream CHARACTER_NODE
+              const characterReferenceImages: string[] = [];
+              const characterNode = inputs.find(n => n.type === NodeType.CHARACTER_NODE);
+
+              if (characterNode?.data.generatedCharacters) {
+                  const characters = characterNode.data.generatedCharacters as CharacterProfile[];
+                  characters.forEach(char => {
+                      // Prefer threeViewSheet, fallback to expressionSheet
+                      if (char.threeViewSheet) {
+                          characterReferenceImages.push(char.threeViewSheet);
+                      } else if (char.expressionSheet) {
+                          characterReferenceImages.push(char.expressionSheet);
+                      }
+                  });
+
+                  console.log('[STORYBOARD_IMAGE] Found character references:', {
+                      characterCount: characters.length,
+                      referenceImageCount: characterReferenceImages.length,
+                      characterNames: characters.map(c => c.name)
+                  });
+              }
+
+              // Extract shot descriptions from content
+              // Parse both structured (JSON) and unstructured (text) formats
+              let shotDescriptions: string[] = [];
+
+              // Try to parse as JSON first (from generateDetailedStoryboard)
+              const jsonMatch = storyboardContent.match(/\{[\s\S]*"shots"[\s\S]*\}/);
+              if (jsonMatch) {
+                  try {
+                      const parsed = JSON.parse(jsonMatch[0]);
+                      if (parsed.shots && Array.isArray(parsed.shots)) {
+                          shotDescriptions = parsed.shots.map((shot: any) =>
+                              `${shot.visualDescription || shot.scene || ''}`
+                          );
+                      }
+                  } catch (e) {
+                      console.warn('[STORYBOARD_IMAGE] Failed to parse JSON, falling back to text parsing');
+                  }
+              }
+
+              // Fallback: Parse text descriptions (numbered list or paragraphs)
+              if (shotDescriptions.length === 0) {
+                  // Try numbered list format
+                  const numberedMatches = storyboardContent.match(/^\d+[.、)]\s*(.+)$/gm);
+                  if (numberedMatches && numberedMatches.length > 0) {
+                      shotDescriptions = numberedMatches.map(m => m.replace(/^\d+[.、)]\s*/, '').trim());
+                  } else {
+                      // Split by line breaks and filter empty lines
+                      shotDescriptions = storyboardContent.split(/\n+/)
+                          .map(line => line.trim())
+                          .filter(line => line.length > 10); // Minimum meaningful description length
+                  }
+              }
+
+              if (shotDescriptions.length === 0) {
+                  throw new Error("未能从内容中提取分镜描述，请检查格式");
+              }
+
+              console.log('[STORYBOARD_IMAGE] Extracted shots:', {
+                  count: shotDescriptions.length,
+                  samples: shotDescriptions.slice(0, 3)
+              });
+
+              // Get grid configuration
+              const gridType = node.data.storyboardGridType || '9';
+              const panelOrientation = node.data.storyboardPanelOrientation || '16:9';
+              const panelCount = gridType === '9' ? 9 : 6;
+              const gridLayout = gridType === '9' ? '3x3 grid' : '2x3 grid';
+
+              console.log('[STORYBOARD_IMAGE] Grid configuration:', {
+                  gridType,
+                  panelOrientation,
+                  panelCount,
+                  gridLayout
+              });
+
+              // Take only the required number of shots
+              const selectedShots = shotDescriptions.slice(0, panelCount);
+
+              // Pad if less than required
+              while (selectedShots.length < panelCount) {
+                  selectedShots.push('empty frame');
+              }
+
+              // Get visual style from upstream
+              const { style } = getUpstreamStyleContext(node, nodesRef.current);
+              const stylePrefix = getVisualPromptPrefix(style);
+
+              // Build comprehensive grid prompt
+              const panelDescriptions = selectedShots.map((desc, idx) => {
+                  // Truncate long descriptions to avoid overly long prompts
+                  const shortDesc = desc.length > 100 ? desc.substring(0, 100) + '...' : desc;
+                  return `${idx + 1}. ${shortDesc}`;
+              }).join('\n');
+
+              // Simplified and more effective prompt based on comic book generation best practices
+              const gridPrompt = `
+${gridType === '9' ? 'nine panel storyboard' : 'six panel storyboard'}, ${gridType === '9' ? '3x3 grid layout' : '2x3 grid layout'}, comic book style
+${stylePrefix ? stylePrefix + ', ' : ''}professional storyboard panels, ${panelOrientation === '16:9' ? 'landscape panels' : 'portrait panels'}
+clear panel borders, numbered panels 1-${panelCount}
+
+Scenes:
+${panelDescriptions}
+
+${characterReferenceImages.length > 0 ? 'maintain character consistency across all panels' : ''}
+cinematic composition, sequential storytelling
+`;
+
+              console.log('[STORYBOARD_IMAGE] Generating grid image with prompt length:', gridPrompt.length);
+              console.log('[STORYBOARD_IMAGE] Character references:', characterReferenceImages.length);
+              console.log('[STORYBOARD_IMAGE] Grid configuration:', { gridType, panelOrientation, outputAspectRatio });
+
+              // Determine output aspect ratio based on grid configuration
+              const outputAspectRatio = panelOrientation;
+
+              try {
+                  const imgs = await generateImageFromText(
+                      gridPrompt,
+                      'gemini-2.5-flash-image',
+                      characterReferenceImages,
+                      { aspectRatio: outputAspectRatio, count: 1 },
+                      { nodeId: id, nodeType: node.type }
+                  );
+
+                  if (imgs && imgs.length > 0) {
+                      handleNodeUpdate(id, {
+                          storyboardGridImage: imgs[0],
+                          storyboardGridType: gridType,
+                          storyboardPanelOrientation: panelOrientation
+                      });
+                      console.log('[STORYBOARD_IMAGE] Grid image generated successfully');
+                  } else {
+                      throw new Error('Failed to generate storyboard grid image');
+                  }
+              } catch (error: any) {
+                  console.error('[STORYBOARD_IMAGE] Generation failed:', error);
+                  console.error('[STORYBOARD_IMAGE] Error details:', {
+                      message: error.message,
+                      stack: error.stack,
+                      promptLength: gridPrompt.length,
+                      hasCharacterRefs: characterReferenceImages.length > 0
+                  });
+                  throw error;
+              }
 
           } else if (node.type === NodeType.VIDEO_ANALYZER) {
              const vid = node.data.videoUri || inputs.find(n => n?.data.videoUri)?.data.videoUri;
@@ -1895,7 +2669,7 @@ export const App = () => {
                       setResizingNodeId(id); setInitialSize({ width: w, height: h }); setResizeStartPos({ x: e.clientX, y: e.clientY }); 
                   }}
                   onCharacterAction={handleCharacterAction}
-                  onViewCharacter={(char) => setViewingCharacter(char)}
+                  onViewCharacter={(char) => setViewingCharacter({ character: char, nodeId: node.id })}
                   isSelected={selectedNodeIds.includes(node.id)} 
                   inputAssets={node.inputs.map(i => nodes.find(n => n.id === i)).filter(n => n && (n.data.image || n.data.videoUri || n.data.croppedFrame)).slice(0, 6).map(n => ({ id: n!.id, type: (n!.data.croppedFrame || n!.data.image) ? 'image' : 'video', src: n!.data.croppedFrame || n!.data.image || n!.data.videoUri! }))}
                   onInputReorder={(nodeId, newOrder) => { const node = nodes.find(n => n.id === nodeId); if (node) { setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, inputs: newOrder } : n)); } }}
@@ -1921,6 +2695,7 @@ export const App = () => {
                   NodeType.SCRIPT_EPISODE,
                   NodeType.CHARACTER_NODE,
                   NodeType.STORYBOARD_GENERATOR,
+                  NodeType.STORYBOARD_IMAGE,
                   NodeType.DRAMA_ANALYZER,
                   NodeType.VIDEO_ANALYZER,
                   NodeType.IMAGE_EDITOR
@@ -1999,8 +2774,12 @@ export const App = () => {
             }}
           />
           <CharacterDetailModal
-            character={viewingCharacter}
+            character={viewingCharacter?.character || null}
+            nodeId={viewingCharacter?.nodeId}
+            allNodes={nodes}
             onClose={() => setViewingCharacter(null)}
+            onGenerateExpression={(nodeId, charName) => handleCharacterAction(nodeId, 'GENERATE_EXPRESSION', charName)}
+            onGenerateThreeView={(nodeId, charName) => handleCharacterAction(nodeId, 'GENERATE_THREE_VIEW', charName)}
           />
           <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <ApiKeyPrompt
@@ -2008,8 +2787,12 @@ export const App = () => {
             onClose={() => setIsApiKeyPromptOpen(false)}
             onSave={handleApiKeySave}
           />
+          <DebugPanel
+            isOpen={isDebugOpen}
+            onClose={() => setIsDebugOpen(false)}
+          />
 
-          <SidebarDock 
+          <SidebarDock
               onAddNode={addNode}
               onUndo={undo}
               isChatOpen={isChatOpen}
@@ -2020,6 +2803,8 @@ export const App = () => {
               onToggleSonicStudio={() => setIsSonicStudioOpen(!isSonicStudioOpen)}
               isCharacterLibraryOpen={isCharacterLibraryOpen}
               onToggleCharacterLibrary={() => setIsCharacterLibraryOpen(!isCharacterLibraryOpen)}
+              isDebugOpen={isDebugOpen}
+              onToggleDebug={() => setIsDebugOpen(!isDebugOpen)}
               assetHistory={assetHistory}
               onHistoryItemClick={(item) => { const type = item.type.includes('image') ? NodeType.IMAGE_GENERATOR : NodeType.VIDEO_GENERATOR; const data = item.type === 'image' ? { image: item.src } : { videoUri: item.src }; addNode(type, undefined, undefined, data); }}
               onDeleteAsset={(id) => setAssetHistory(prev => prev.filter(a => a.id !== id))}

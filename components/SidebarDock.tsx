@@ -5,7 +5,7 @@ import {
     Plus, RotateCcw, History, MessageSquare, FolderHeart, X,
     ImageIcon, Video as VideoIcon, Film, Save, FolderPlus,
     Edit, Trash2, Box, ScanFace, Brush, Type, Workflow as WorkflowIcon,
-    Clapperboard, Mic2, Settings, BookOpen, ScrollText, User, Search, Sparkles, Palette
+    Clapperboard, Mic2, Settings, BookOpen, ScrollText, User, Search, Sparkles, Palette, Bug, LayoutGrid
 } from 'lucide-react';
 import { NodeType, Workflow } from '../types';
 
@@ -14,11 +14,11 @@ interface SidebarDockProps {
     onUndo: () => void;
     isChatOpen: boolean;
     onToggleChat: () => void;
-    
+
     // Smart Sequence (ex-MultiFrame)
     isMultiFrameOpen: boolean;
     onToggleMultiFrame: () => void;
-    
+
     // Sonic Studio (Music)
     isSonicStudioOpen?: boolean;
     onToggleSonicStudio?: () => void;
@@ -26,12 +26,16 @@ interface SidebarDockProps {
     // Character Library
     isCharacterLibraryOpen?: boolean;
     onToggleCharacterLibrary?: () => void;
-    
+
+    // Debug Panel
+    isDebugOpen?: boolean;
+    onToggleDebug?: () => void;
+
     // History Props
     assetHistory: any[];
     onHistoryItemClick: (item: any) => void;
     onDeleteAsset: (id: string) => void;
-    
+
     // Workflow Props
     workflows: Workflow[];
     selectedWorkflowId: string | null;
@@ -56,6 +60,7 @@ const getNodeNameCN = (t: string) => {
         case NodeType.SCRIPT_PLANNER: return '剧本大纲';
         case NodeType.SCRIPT_EPISODE: return '剧本分集';
         case NodeType.STORYBOARD_GENERATOR: return '分镜生成';
+        case NodeType.STORYBOARD_IMAGE: return '分镜图设计';
         case NodeType.CHARACTER_NODE: return '角色设计';
         case NodeType.DRAMA_ANALYZER: return '剧目分析';
         case NodeType.DRAMA_REFINED: return '剧目精炼';
@@ -75,6 +80,7 @@ const getNodeIcon = (t: string) => {
         case NodeType.SCRIPT_PLANNER: return BookOpen;
         case NodeType.SCRIPT_EPISODE: return ScrollText;
         case NodeType.STORYBOARD_GENERATOR: return Clapperboard;
+        case NodeType.STORYBOARD_IMAGE: return LayoutGrid;
         case NodeType.CHARACTER_NODE: return User;
         case NodeType.DRAMA_ANALYZER: return Search;
         case NodeType.DRAMA_REFINED: return Sparkles;
@@ -96,6 +102,8 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
     onToggleSonicStudio,
     isCharacterLibraryOpen,
     onToggleCharacterLibrary,
+    isDebugOpen,
+    onToggleDebug,
     assetHistory,
     onHistoryItemClick,
     onDeleteAsset,
@@ -298,7 +306,7 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
                     </span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
-                    {[NodeType.PROMPT_INPUT, NodeType.IMAGE_GENERATOR, NodeType.VIDEO_GENERATOR, NodeType.AUDIO_GENERATOR, NodeType.SCRIPT_PLANNER, NodeType.SCRIPT_EPISODE, NodeType.CHARACTER_NODE, NodeType.STYLE_PRESET, NodeType.STORYBOARD_GENERATOR, NodeType.DRAMA_ANALYZER, NodeType.VIDEO_ANALYZER, NodeType.IMAGE_EDITOR].map(t => {
+                    {[NodeType.PROMPT_INPUT, NodeType.IMAGE_GENERATOR, NodeType.VIDEO_GENERATOR, NodeType.AUDIO_GENERATOR, NodeType.SCRIPT_PLANNER, NodeType.SCRIPT_EPISODE, NodeType.CHARACTER_NODE, NodeType.STYLE_PRESET, NodeType.STORYBOARD_GENERATOR, NodeType.STORYBOARD_IMAGE, NodeType.DRAMA_ANALYZER, NodeType.VIDEO_ANALYZER, NodeType.IMAGE_EDITOR].map(t => {
                         const ItemIcon = getNodeIcon(t);
                         return (
                             <button 
@@ -329,12 +337,13 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
             >
                 {[
                     { id: 'add', icon: Plus },
-                    { id: 'workflow', icon: FolderHeart }, 
+                    { id: 'workflow', icon: FolderHeart },
                     { id: 'smart_sequence', icon: Clapperboard, action: onToggleMultiFrame, active: isMultiFrameOpen },
                     { id: 'sonic_studio', icon: Mic2, action: onToggleSonicStudio, active: isSonicStudioOpen, tooltip: '音频中心 (Audio Hub)' },
                     { id: 'character_library', icon: User, action: onToggleCharacterLibrary, active: isCharacterLibraryOpen, tooltip: '角色库 (Char Lib)' },
                     { id: 'history', icon: History },
                     { id: 'chat', icon: MessageSquare, action: onToggleChat, active: isChatOpen },
+                    { id: 'debug', icon: Bug, action: onToggleDebug, active: isDebugOpen, tooltip: 'API日志调试' },
                     { id: 'undo', icon: RotateCcw, action: onUndo },
                 ].map(item => (
                     <div key={item.id} className="relative group">
@@ -346,9 +355,9 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
                             <item.icon size={20} strokeWidth={2} />
                         </button>
                         {/* Tooltip for Sidebar Icons */}
-                        {(item.id === 'smart_sequence' || item.id === 'sonic_studio' || item.id === 'character_library') && (
+                        {(item.id === 'smart_sequence' || item.id === 'sonic_studio' || item.id === 'character_library' || item.id === 'debug') && (
                             <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-black/80 backdrop-blur-md rounded border border-white/10 text-[10px] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                {item.tooltip || (item.id === 'smart_sequence' ? '智能多帧' : '音频中心')}
+                                {item.tooltip || (item.id === 'smart_sequence' ? '智能多帧' : item.id === 'debug' ? 'API日志调试' : '音频中心')}
                             </div>
                         )}
                     </div>

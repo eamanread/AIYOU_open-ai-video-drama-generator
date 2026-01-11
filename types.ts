@@ -9,6 +9,7 @@ export enum NodeType {
   SCRIPT_PLANNER = 'SCRIPT_PLANNER',
   SCRIPT_EPISODE = 'SCRIPT_EPISODE',
   STORYBOARD_GENERATOR = 'STORYBOARD_GENERATOR',
+  STORYBOARD_IMAGE = 'STORYBOARD_IMAGE',
   CHARACTER_NODE = 'CHARACTER_NODE',
   DRAMA_ANALYZER = 'DRAMA_ANALYZER',
   DRAMA_REFINED = 'DRAMA_REFINED',
@@ -78,6 +79,7 @@ export interface CharacterProfile {
     id: string;
     name: string;
     alias?: string;
+    roleType?: 'main' | 'supporting'; // 主角 or 配角
     basicStats?: string; // 26岁, 女...
     profession?: string;
     appearance?: string; // Prompt used for generation
@@ -95,6 +97,9 @@ export interface CharacterProfile {
     status?: 'IDLE' | 'GENERATING' | 'SUCCESS' | 'ERROR';
     error?: string;
     isSaved?: boolean;
+    // Generation flags
+    isGeneratingExpression?: boolean;
+    isGeneratingThreeView?: boolean;
 }
 
 export interface AppNode {
@@ -164,6 +169,11 @@ export interface AppNode {
 
     // Episode Storyboard (for PROMPT_INPUT nodes that are episode scripts)
     episodeStoryboard?: EpisodeStoryboard; // Detailed storyboard breakdown
+
+    // Storyboard Image Grid (for STORYBOARD_IMAGE nodes)
+    storyboardGridImage?: string; // Single image containing grid layout (9-panel or 6-panel)
+    storyboardGridType?: '9' | '6'; // Grid layout type: 9-panel (3x3) or 6-panel (2x3)
+    storyboardPanelOrientation?: '16:9' | '9:16'; // Panel orientation: landscape or portrait
 
     // Drama Analyzer Specifics
     dramaName?: string; // 剧名

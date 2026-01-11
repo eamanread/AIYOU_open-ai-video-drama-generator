@@ -20,7 +20,8 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
       NodeType.VIDEO_GENERATOR,
       NodeType.AUDIO_GENERATOR,
       NodeType.SCRIPT_PLANNER,
-      NodeType.CHARACTER_NODE
+      NodeType.CHARACTER_NODE,
+      NodeType.STORYBOARD_IMAGE  // 剧本分集子节点可以输出到分镜图设计
     ],
     minInputs: 0,
     maxInputs: 0,
@@ -167,11 +168,29 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     ],
     allowedOutputs: [
       NodeType.IMAGE_GENERATOR,
-      NodeType.VIDEO_GENERATOR
+      NodeType.VIDEO_GENERATOR,
+      NodeType.STORYBOARD_IMAGE  // NEW: Output to storyboard image
     ],
     minInputs: 1,
     maxInputs: 10, // Allow multiple inputs for character deduplication and style
     description: '提取角色并生成角色档案（支持多输入去重和风格设定参考）'
+  },
+
+  // 分镜图设计 - 接收剧本和角色输入,生成九宫格分镜图
+  [NodeType.STORYBOARD_IMAGE]: {
+    allowedInputs: [
+      NodeType.PROMPT_INPUT,
+      NodeType.SCRIPT_EPISODE,
+      NodeType.CHARACTER_NODE,  // Accept character design for consistency
+      NodeType.STYLE_PRESET
+    ],
+    allowedOutputs: [
+      NodeType.IMAGE_GENERATOR,
+      NodeType.VIDEO_GENERATOR
+    ],
+    minInputs: 1,
+    maxInputs: 10,  // prompt + episode + multiple characters + style
+    description: '生成九宫格分镜图，支持角色一致性参考'
   },
 
   // 剧目分析 - 无输入,可输出到剧目精炼和剧本大纲
@@ -414,6 +433,15 @@ export function canExecuteNode(
       }
       break;
 
+    case NodeType.STORYBOARD_IMAGE:
+      if (inputCount === 0 && !node.data.prompt) {
+        return {
+          valid: false,
+          error: '请输入分镜描述或连接剧本节点'
+        };
+      }
+      break;
+
     case NodeType.CHARACTER_NODE:
       if (inputCount === 0) {
         return {
@@ -465,9 +493,11 @@ function getNodeDisplayName(type: NodeType): string {
     [NodeType.SCRIPT_PLANNER]: '剧本大纲',
     [NodeType.SCRIPT_EPISODE]: '剧本分集',
     [NodeType.STORYBOARD_GENERATOR]: '分镜生成',
+    [NodeType.STORYBOARD_IMAGE]: '分镜图设计',
     [NodeType.CHARACTER_NODE]: '角色设计',
     [NodeType.DRAMA_ANALYZER]: '剧目分析',
-    [NodeType.DRAMA_REFINED]: '剧目精炼'
+    [NodeType.DRAMA_REFINED]: '剧目精炼',
+    [NodeType.STYLE_PRESET]: '全局风格'
   };
 
   return names[type] || type;

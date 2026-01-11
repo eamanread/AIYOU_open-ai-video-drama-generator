@@ -537,16 +537,18 @@ const NodeComponent: React.FC<NodeProps> = ({
         case NodeType.SCRIPT_PLANNER: return { icon: BookOpen, color: 'text-orange-400', border: 'border-orange-500/30' };
         case NodeType.SCRIPT_EPISODE: return { icon: ScrollText, color: 'text-teal-400', border: 'border-teal-500/30' };
         case NodeType.STORYBOARD_GENERATOR: return { icon: Clapperboard, color: 'text-indigo-400', border: 'border-indigo-500/30' };
+        case NodeType.STORYBOARD_IMAGE: return { icon: LayoutGrid, color: 'text-purple-400', border: 'border-purple-500/30' };
         case NodeType.CHARACTER_NODE: return { icon: User, color: 'text-orange-400', border: 'border-orange-500/30' };
         case NodeType.DRAMA_ANALYZER: return { icon: Film, color: 'text-violet-400', border: 'border-violet-500/30' };
         default: return { icon: Type, color: 'text-slate-400', border: 'border-white/10' };
       }
   };
   const { icon: NodeIcon } = getNodeConfig();
-  
+
   const getNodeHeight = () => {
       if (node.height) return node.height;
       if (node.type === NodeType.STORYBOARD_GENERATOR) return STORYBOARD_NODE_HEIGHT;
+      if (node.type === NodeType.STORYBOARD_IMAGE) return 600;
       if (node.type === NodeType.CHARACTER_NODE) return CHARACTER_NODE_HEIGHT;
       if (node.type === NodeType.DRAMA_ANALYZER) return 600;
       if (node.type === NodeType.SCRIPT_PLANNER && node.data.scriptOutline) return 500;
@@ -1015,6 +1017,38 @@ const NodeComponent: React.FC<NodeProps> = ({
               </div>
           );
       }
+      if (node.type === NodeType.STORYBOARD_IMAGE) {
+          const gridImage = node.data.storyboardGridImage;
+
+          return (
+              <div className="w-full h-full flex flex-col overflow-hidden relative bg-[#1c1c1e]">
+                  {gridImage ? (
+                      <div className="flex-1 overflow-hidden p-3 flex items-center justify-center">
+                          <img
+                              ref={mediaRef as any}
+                              src={gridImage}
+                              className="max-w-full max-h-full object-contain cursor-pointer hover:scale-[1.02] transition-transform"
+                              onClick={handleExpand}
+                              draggable={false}
+                              alt="Storyboard Grid"
+                          />
+                      </div>
+                  ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-600 p-6 text-center">
+                          {isWorking ? <Loader2 size={32} className="animate-spin text-purple-500" /> : <LayoutGrid size={32} className="text-purple-500/50" />}
+                          <span className="text-xs font-medium">{isWorking ? "正在生成分镜网格图..." : "等待生成分镜图..."}</span>
+                          {!isWorking && (
+                              <div className="flex flex-col gap-1 text-[10px] text-slate-500 max-w-[220px]">
+                                  <span>💡 输入分镜描述或连接剧本分集节点</span>
+                                  <span>🎭 可连接角色设计节点保持角色一致性</span>
+                                  <span>🎬 选择九宫格/六宫格布局</span>
+                              </div>
+                          )}
+                      </div>
+                  )}
+              </div>
+          );
+      }
       if (node.type === NodeType.STORYBOARD_GENERATOR) {
           const shots = node.data.storyboardShots || [];
           return (
@@ -1104,6 +1138,19 @@ const NodeComponent: React.FC<NodeProps> = ({
                                   const isFailed = profile?.status === 'ERROR';
                                   const isSaved = profile?.isSaved;
 
+                                  // Debug log
+                                  if (profile) {
+                                      console.log('[Node CHARACTER_NODE] Rendering character:', {
+                                          name,
+                                          status: profile.status,
+                                          isProcessing,
+                                          isFailed,
+                                          shouldShowCard: !isProcessing && !isFailed,
+                                          hasProfession: !!profile.profession,
+                                          hasPersonality: !!profile.personality
+                                      });
+                                  }
+
                                   return (
                                       <div key={idx} className="bg-black/20 border border-white/5 rounded-xl p-3 space-y-2 group/char hover:border-white/20 transition-all">
                                           <div className="flex items-center justify-between">
@@ -1111,10 +1158,10 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                   <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 text-xs font-bold">{idx + 1}</div>
                                                   <span className="font-bold text-sm text-slate-200">{name}</span>
                                               </div>
-                                              
+
                                               <div className="flex items-center gap-2">
                                                   {!profile && (
-                                                      <select 
+                                                      <select
                                                           className="bg-black/40 border border-white/10 rounded-lg text-[10px] text-slate-300 px-2 py-1 outline-none"
                                                           value={config.method}
                                                           onChange={(e) => {
@@ -1123,13 +1170,24 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                           }}
                                                           onClick={e => e.stopPropagation()}
                                                       >
-                                                          <option value="AI_AUTO">AI 生成</option>
+                                                          <option value="AI_AUTO">主角 (完整)</option>
+                                                          <option value="SUPPORTING_ROLE">配角 (简化)</option>
                                                           <option value="AI_CUSTOM">补充描述</option>
                                                           <option value="LIBRARY">角色库</option>
                                                       </select>
                                                   )}
-                                                  
-                                                  <button 
+
+                                                  {!profile && (
+                                                      <button
+                                                          onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_SINGLE', name); }}
+                                                          className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold rounded transition-all"
+                                                      >
+                                                          <Sparkles size={10} />
+                                                          生成
+                                                      </button>
+                                                  )}
+
+                                                  <button
                                                       onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'DELETE', name); }}
                                                       className="p-1 rounded-full hover:bg-white/10 text-slate-500 hover:text-red-400 transition-colors"
                                                   >
@@ -1177,8 +1235,16 @@ const NodeComponent: React.FC<NodeProps> = ({
                                           {profile && !isProcessing && !isFailed && (
                                               <div className="bg-[#18181b] rounded-lg p-2 border border-white/5 flex flex-col gap-2 animate-in fade-in cursor-pointer hover:bg-white/5 transition-colors" onClick={() => onViewCharacter?.(profile)}>
                                                   <div className="flex gap-3">
-                                                      <div className="w-16 h-16 shrink-0 bg-black/50 rounded-md overflow-hidden relative">
-                                                          {profile.expressionSheet ? <img src={profile.expressionSheet} className="w-full h-full object-cover" /> : <User className="w-full h-full p-4 text-slate-600" />}
+                                                      <div className="w-16 h-16 shrink-0 bg-black rounded-md overflow-hidden relative">
+                                                          {profile.threeViewSheet ? (
+                                                              <img src={profile.threeViewSheet} className="w-full h-full object-cover" />
+                                                          ) : profile.expressionSheet ? (
+                                                              <img src={profile.expressionSheet} className="w-full h-full object-cover" />
+                                                          ) : (
+                                                              <div className="w-full h-full bg-black flex items-center justify-center">
+                                                                  <User className="w-8 h-8 text-slate-700 opacity-30" />
+                                                              </div>
+                                                          )}
                                                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/char:opacity-100 transition-opacity">
                                                               <Eye size={16} className="text-white drop-shadow-md" />
                                                           </div>
@@ -1197,11 +1263,11 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                           {isSaved ? <CheckCircle size={10} /> : <Save size={10} />}
                                                           {isSaved ? '已保存' : '保存 & 生成三视图'}
                                                       </button>
-                                                      <button 
+                                                      <button
                                                           onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'RETRY', name); }}
                                                           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
                                                       >
-                                                          <RotateCcw size={10} /> 重绘表情
+                                                          <RotateCcw size={10} /> 重新生成
                                                       </button>
                                                   </div>
                                               </div>
@@ -1740,6 +1806,8 @@ const NodeComponent: React.FC<NodeProps> = ({
          models = [{l: 'Gemini 2.5', v: 'gemini-2.5-flash'}];
      } else if (node.type === NodeType.STORYBOARD_GENERATOR) {
          models = [{l: 'Gemini 3 Pro (Logic)', v: 'gemini-3-pro-preview'}];
+     } else if (node.type === NodeType.STORYBOARD_IMAGE) {
+         models = [{l: 'Gemini 2.5', v: 'gemini-2.5-flash-image'}];
      } else if (node.type === NodeType.CHARACTER_NODE) {
          models = [{l: 'Gemini 3 Pro (Design)', v: 'gemini-3-pro-preview'}];
      } else {
@@ -1825,6 +1893,100 @@ const NodeComponent: React.FC<NodeProps> = ({
                         >
                             {isWorking ? <Loader2 className="animate-spin" size={12} /> : <Clapperboard size={12} />}
                             <span>生成电影分镜</span>
+                        </button>
+                    </div>
+                ) : node.type === NodeType.STORYBOARD_IMAGE ? (
+                    <div className="flex flex-col gap-3 p-2">
+                        {/* Text Input for Storyboard Description */}
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">分镜描述 (Description)</span>
+                            <textarea
+                                className="w-full bg-black/20 text-xs text-slate-200 placeholder-slate-500/60 p-2 focus:outline-none resize-none custom-scrollbar font-medium leading-relaxed rounded-lg border border-white/5 focus:border-purple-500/50"
+                                style={{ height: '80px' }}
+                                placeholder="输入分镜描述，或连接剧本分集子节点..."
+                                value={localPrompt}
+                                onChange={(e) => setLocalPrompt(e.target.value)}
+                                onBlur={() => { setIsInputFocused(false); commitPrompt(); }}
+                                onFocus={() => setIsInputFocused(true)}
+                            />
+                        </div>
+
+                        {/* Connection Status */}
+                        {node.inputs.length > 0 && (
+                            <div className="flex flex-col gap-1 px-1">
+                                <div className="flex items-center gap-2 text-[9px] text-slate-400">
+                                    <Link size={10} />
+                                    <span>已连接 {node.inputs.length} 个节点</span>
+                                </div>
+                                {/* Show if character node is connected */}
+                                {allNodes?.find(n => node.inputs.includes(n.id) && n.type === NodeType.CHARACTER_NODE) && (
+                                    <div className="flex items-center gap-2 px-2 py-1 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] text-orange-300">
+                                        <User size={10} />
+                                        <span>已连接角色设计，将保持角色一致性</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Grid Type Selector */}
+                        <div className="flex flex-col gap-1 px-1">
+                            <span className="text-[9px] text-slate-400 font-bold">网格布局 (Grid Layout)</span>
+                            <div className="flex gap-2">
+                                {[
+                                    { value: '9', label: '九宫格 (3×3)', desc: '9个分镜面板' },
+                                    { value: '6', label: '六宫格 (2×3)', desc: '6个分镜面板' }
+                                ].map(({ value, label }) => (
+                                    <button
+                                        key={value}
+                                        onClick={() => onUpdate(node.id, { storyboardGridType: value as '9' | '6' })}
+                                        className={`flex-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                            (node.data.storyboardGridType || '9') === value
+                                                ? 'bg-purple-500/20 border border-purple-500/50 text-purple-300'
+                                                : 'bg-black/20 border border-white/10 text-slate-400 hover:bg-white/5'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Panel Orientation Selector */}
+                        <div className="flex flex-col gap-1 px-1">
+                            <span className="text-[9px] text-slate-400 font-bold">面板方向 (Panel Orientation)</span>
+                            <div className="flex gap-2">
+                                {[
+                                    { value: '16:9', label: '横屏 (16:9)', icon: Monitor },
+                                    { value: '9:16', label: '竖屏 (9:16)', icon: Monitor }
+                                ].map(({ value, label, icon: Icon }) => (
+                                    <button
+                                        key={value}
+                                        onClick={() => onUpdate(node.id, { storyboardPanelOrientation: value as '16:9' | '9:16' })}
+                                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                            (node.data.storyboardPanelOrientation || '16:9') === value
+                                                ? 'bg-purple-500/20 border border-purple-500/50 text-purple-300'
+                                                : 'bg-black/20 border border-white/10 text-slate-400 hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <Icon size={12} className={value === '9:16' ? 'rotate-90' : ''} />
+                                        <span>{label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handleActionClick}
+                            disabled={isWorking || (node.inputs.length === 0 && !localPrompt.trim())}
+                            className={`
+                                w-full mt-1 flex items-center justify-center gap-2 px-4 py-1.5 rounded-[10px] font-bold text-[10px] tracking-wide transition-all duration-300
+                                ${isWorking || (node.inputs.length === 0 && !localPrompt.trim())
+                                    ? 'bg-white/5 text-slate-500 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg hover:shadow-purple-500/20 hover:scale-[1.02]'}
+                            `}
+                        >
+                            {isWorking ? <Loader2 className="animate-spin" size={12} /> : <LayoutGrid size={12} />}
+                            <span>生成九宫格分镜图</span>
                         </button>
                     </div>
                 ) : node.type === NodeType.CHARACTER_NODE ? (

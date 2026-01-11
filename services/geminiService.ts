@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Type, Modality, Part, FunctionDeclaration } from "@google/genai";
 import { SmartSequenceItem, VideoGenerationMode, StoryboardShot, CharacterProfile } from "../types";
+import { logAPICall } from "./apiLogger";
 
 // Get API Key from localStorage only
 const getApiKey = (): string | null => {
@@ -269,6 +270,27 @@ const CHARACTER_PROFILE_INSTRUCTION = `
 4. 如果上下文没有提供足够信息，请根据角色定位进行合理的**AI自动补全**，使其丰满。
 `;
 
+const SUPPORTING_CHARACTER_INSTRUCTION = `
+你是一位资深的角色设计师。
+你的任务是为配角生成简化的角色档案。配角是故事中的次要角色，只需要基础信息即可。
+
+**输出格式要求 (JSON):**
+请直接输出一个 JSON 对象，包含以下字段：
+{
+  "name": "角色名",
+  "basicStats": "基础属性 (年龄、性别、身高、身材、发型、特征、着装)",
+  "profession": "职业",
+  "introduction": "简短介绍 (1-2句话描述角色定位和在剧中的作用)",
+  "appearancePrompt": "用于AI生图的详细英文提示词 (Format: [Visual Style Keywords], [Character Description], [Clothing], [Face], [Lighting]. Ensure it strictly matches the Visual Style Context provided.)"
+}
+
+**内容要求：**
+1. 保持简洁，突出角色的核心定位。
+2. 必须严格遵守传入的【Visual Style Context】视觉风格设定。
+3. "appearancePrompt" 字段必须包含具体的视觉风格关键词，描述清晰。
+4. 配角不需要详细的性格、动机、关系等信息。
+`;
+
 const DRAMA_ANALYZER_INSTRUCTION = `
 你是一位资深的影视剧分析专家和编剧顾问。
 你的任务是对用户提供的剧名进行深度分析，从多个维度评估其创作价值和IP潜力。
@@ -505,222 +527,281 @@ const DETAILED_STORYBOARD_INSTRUCTION = `
 // --- API Functions ---
 
 export const sendChatMessage = async (
-    history: { role: 'user' | 'model', parts: { text: string }[] }[], 
+    history: { role: 'user' | 'model', parts: { text: string }[] }[],
     newMessage: string,
-    options?: { isThinkingMode?: boolean, isStoryboard?: boolean, isHelpMeWrite?: boolean }
+    options?: { isThinkingMode?: boolean, isStoryboard?: boolean, isHelpMeWrite?: boolean },
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<string> => {
-    const ai = getClient();
-    
-    let modelName = 'gemini-2.5-flash';
-    let systemInstruction = SYSTEM_INSTRUCTION;
+    return logAPICall(
+        'sendChatMessage',
+        async () => {
+            const ai = getClient();
 
-    if (options?.isThinkingMode) {
-        modelName = 'gemini-2.5-flash';
-    }
+            let modelName = 'gemini-2.5-flash';
+            let systemInstruction = SYSTEM_INSTRUCTION;
 
-    if (options?.isStoryboard) {
-        systemInstruction = STORYBOARD_INSTRUCTION;
-    } else if (options?.isHelpMeWrite) {
-        systemInstruction = HELP_ME_WRITE_INSTRUCTION;
-    }
+            if (options?.isThinkingMode) {
+                modelName = 'gemini-2.5-flash';
+            }
 
-    const chat = ai.chats.create({
-        model: modelName,
-        config: { systemInstruction },
-        history: history
-    });
+            if (options?.isStoryboard) {
+                systemInstruction = STORYBOARD_INSTRUCTION;
+            } else if (options?.isHelpMeWrite) {
+                systemInstruction = HELP_ME_WRITE_INSTRUCTION;
+            }
 
-    const result = await chat.sendMessage({ message: newMessage });
-    return result.text || "No response";
+            const chat = ai.chats.create({
+                model: modelName,
+                config: { systemInstruction },
+                history: history
+            });
+
+            const result = await chat.sendMessage({ message: newMessage });
+            return result.text || "No response";
+        },
+        {
+            model: options?.isThinkingMode ? 'gemini-2.5-flash' : 'gemini-2.5-flash',
+            message: newMessage.substring(0, 200) + (newMessage.length > 200 ? '...' : ''),
+            options,
+            historyLength: history.length
+        },
+        context
+    );
 };
 
 // ... (generateImageFromText, generateVideo, analyzeVideo, editImageWithText, planStoryboard, generateScriptPlanner, generateScriptEpisodes, generateCinematicStoryboard UNCHANGED) ...
 export const generateImageFromText = async (
-    prompt: string, 
-    model: string, 
-    inputImages: string[] = [], 
-    options: { aspectRatio?: string, resolution?: string, count?: number } = {}
+    prompt: string,
+    model: string,
+    inputImages: string[] = [],
+    options: { aspectRatio?: string, resolution?: string, count?: number } = {},
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<string[]> => {
-    const ai = getClient();
-    
-    // Fallback/Correction for model names
-    const effectiveModel = model.includes('imagen') ? 'imagen-3.0-generate-002' : 'gemini-2.5-flash-image';
-    
-    // Prepare Contents
-    const parts: Part[] = [];
-    
-    // Add Input Images if available (Image-to-Image)
-    for (const base64 of inputImages) {
-        const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
-        const mimeType = base64.match(/^data:(image\/\w+);base64,/)?.[1] || "image/png";
-        parts.push({ inlineData: { data: cleanBase64, mimeType } });
-    }
-    
-    parts.push({ text: prompt });
+    return logAPICall(
+        'generateImageFromText',
+        async () => {
+            const ai = getClient();
 
-    try {
-        const response = await ai.models.generateContent({
-            model: effectiveModel,
-            contents: { parts },
-            config: {
-                // responseMimeType: 'image/jpeg', // Not supported for Gemini models yet in this SDK version context
+            // Fallback/Correction for model names
+            const effectiveModel = model.includes('imagen') ? 'imagen-3.0-generate-002' : 'gemini-2.5-flash-image';
+
+            // Prepare Contents
+            const parts: Part[] = [];
+
+            // Add Input Images if available (Image-to-Image)
+            for (const base64 of inputImages) {
+                const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
+                const mimeType = base64.match(/^data:(image\/\w+);base64,/)?.[1] || "image/png";
+                parts.push({ inlineData: { data: cleanBase64, mimeType } });
             }
-        });
 
-        // Parse Response for Images
-        const images: string[] = [];
-        if (response.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                    const mime = part.inlineData.mimeType || 'image/png';
-                    images.push(`data:${mime};base64,${part.inlineData.data}`);
+            parts.push({ text: prompt });
+
+            try {
+                const response = await ai.models.generateContent({
+                    model: effectiveModel,
+                    contents: { parts },
+                    config: {
+                        // responseMimeType: 'image/jpeg', // Not supported for Gemini models yet in this SDK version context
+                    }
+                });
+
+                // Parse Response for Images
+                const images: string[] = [];
+                if (response.candidates?.[0]?.content?.parts) {
+                    for (const part of response.candidates[0].content.parts) {
+                        if (part.inlineData && part.inlineData.data) {
+                            const mime = part.inlineData.mimeType || 'image/png';
+                            images.push(`data:${mime};base64,${part.inlineData.data}`);
+                        }
+                    }
                 }
-            }
-        }
-        
-        if (images.length === 0) {
-            throw new Error("No images generated. Safety filter might have been triggered.");
-        }
 
-        return images;
-    } catch (e: any) {
-        console.error("Image Gen Error:", e);
-        throw new Error(getErrorMessage(e));
-    }
+                if (images.length === 0) {
+                    throw new Error("No images generated. Safety filter might have been triggered.");
+                }
+
+                return images;
+            } catch (e: any) {
+                console.error("Image Gen Error:", e);
+                throw new Error(getErrorMessage(e));
+            }
+        },
+        {
+            model,
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            options,
+            inputs: inputImages.map(() => '[Image Data]')
+        },
+        context
+    );
 };
 
 export const generateVideo = async (
-    prompt: string, 
-    model: string, 
-    options: { aspectRatio?: string, count?: number, generationMode?: VideoGenerationMode, resolution?: string } = {}, 
+    prompt: string,
+    model: string,
+    options: { aspectRatio?: string, count?: number, generationMode?: VideoGenerationMode, resolution?: string } = {},
     inputImageBase64?: string | null,
     videoInput?: any,
-    referenceImages?: string[]
+    referenceImages?: string[],
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<{ uri: string, isFallbackImage?: boolean, videoMetadata?: any, uris?: string[] }> => {
-    const ai = getClient();
-    
-    const qualitySuffix = ", cinematic lighting, highly detailed, photorealistic, 4k, smooth motion, professional color grading";
-    const enhancedPrompt = prompt + qualitySuffix;
-    
-    let resolution = options.resolution || (model.includes('pro') ? '1080p' : '720p');
+    return logAPICall(
+        'generateVideo',
+        async () => {
+            const ai = getClient();
 
-    // Prepare Inputs
-    let inputs: any = { prompt: enhancedPrompt };
-    
-    let finalInputImageBase64: string | null = null;
-    if (inputImageBase64) {
-        try {
-            const compat = await convertImageToCompatibleFormat(inputImageBase64);
-            inputs.image = { imageBytes: compat.data, mimeType: compat.mimeType };
-            finalInputImageBase64 = compat.fullDataUri;
-        } catch (e) {
-            console.warn("Veo Input Image Conversion Failed:", e);
-        }
-    } 
+            const qualitySuffix = ", cinematic lighting, highly detailed, photorealistic, 4k, smooth motion, professional color grading";
+            const enhancedPrompt = prompt + qualitySuffix;
 
-    if (videoInput) {
-        inputs.video = videoInput;
-    }
+            let resolution = options.resolution || (model.includes('pro') ? '1080p' : '720p');
 
-    const config: any = {
-        numberOfVideos: 1, 
-        aspectRatio: options.aspectRatio || '16:9',
-        resolution: resolution as any
-    };
+            // Prepare Inputs
+            let inputs: any = { prompt: enhancedPrompt };
 
-    if (referenceImages && referenceImages.length > 0 && model === 'veo-3.1-generate-preview') {
-         const refsPayload = [];
-         for (const ref of referenceImages) {
-             const c = await convertImageToCompatibleFormat(ref);
-             refsPayload.push({ image: { imageBytes: c.data, mimeType: c.mimeType }, referenceType: 'ASSET' });
-         }
-         config.referenceImages = refsPayload;
-    }
-
-    const count = options.count || 1;
-    
-    try {
-        const operations = [];
-        for (let i = 0; i < count; i++) {
-             operations.push(retryWithBackoff(async () => {
-                 let op = await ai.models.generateVideos({
-                     model: model,
-                     ...inputs,
-                     config: config
-                 });
-                 
-                 while (!op.done) {
-                     await wait(5000); 
-                     op = await ai.operations.getVideosOperation({ operation: op });
-                 }
-                 return op;
-             }));
-        }
-
-        const results = await Promise.allSettled(operations);
-        
-        const validUris: string[] = [];
-        let primaryMetadata = null;
-
-        for (const res of results) {
-            if (res.status === 'fulfilled') {
-                const vid = res.value.response?.generatedVideos?.[0]?.video;
-                if (vid?.uri) {
-                    const fullUri = `${vid.uri}&key=${process.env.API_KEY}`;
-                    validUris.push(fullUri);
-                    if (!primaryMetadata) primaryMetadata = vid;
+            let finalInputImageBase64: string | null = null;
+            if (inputImageBase64) {
+                try {
+                    const compat = await convertImageToCompatibleFormat(inputImageBase64);
+                    inputs.image = { imageBytes: compat.data, mimeType: compat.mimeType };
+                    finalInputImageBase64 = compat.fullDataUri;
+                } catch (e) {
+                    console.warn("Veo Input Image Conversion Failed:", e);
                 }
             }
-        }
 
-        if (validUris.length === 0) {
-            const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
-            throw firstError?.reason || new Error("Video generation failed (No valid URIs).");
-        }
+            if (videoInput) {
+                inputs.video = videoInput;
+            }
 
-        return { 
-            uri: validUris[0], 
-            uris: validUris, 
-            videoMetadata: primaryMetadata,
-            isFallbackImage: false 
-        };
+            const config: any = {
+                numberOfVideos: 1,
+                aspectRatio: options.aspectRatio || '16:9',
+                resolution: resolution as any
+            };
 
-    } catch (e: any) {
-        console.warn("Veo Generation Failed. Falling back to Image.", e);
-        try {
-            const fallbackPrompt = "Cinematic movie still, " + enhancedPrompt;
-            const inputImages = finalInputImageBase64 ? [finalInputImageBase64] : [];
-            const imgs = await generateImageFromText(fallbackPrompt, 'gemini-2.5-flash-image', inputImages, { aspectRatio: options.aspectRatio });
-            return { uri: imgs[0], isFallbackImage: true };
-        } catch (imgErr) {
-            throw new Error("Video generation failed and Image fallback also failed: " + getErrorMessage(e));
-        }
-    }
+            if (referenceImages && referenceImages.length > 0 && model === 'veo-3.1-generate-preview') {
+                const refsPayload = [];
+                for (const ref of referenceImages) {
+                    const c = await convertImageToCompatibleFormat(ref);
+                    refsPayload.push({ image: { imageBytes: c.data, mimeType: c.mimeType }, referenceType: 'ASSET' });
+                }
+                config.referenceImages = refsPayload;
+            }
+
+            const count = options.count || 1;
+
+            try {
+                const operations = [];
+                for (let i = 0; i < count; i++) {
+                    operations.push(retryWithBackoff(async () => {
+                        let op = await ai.models.generateVideos({
+                            model: model,
+                            ...inputs,
+                            config: config
+                        });
+
+                        while (!op.done) {
+                            await wait(5000);
+                            op = await ai.operations.getVideosOperation({ operation: op });
+                        }
+                        return op;
+                    }));
+                }
+
+                const results = await Promise.allSettled(operations);
+
+                const validUris: string[] = [];
+                let primaryMetadata = null;
+
+                for (const res of results) {
+                    if (res.status === 'fulfilled') {
+                        const vid = res.value.response?.generatedVideos?.[0]?.video;
+                        if (vid?.uri) {
+                            const fullUri = `${vid.uri}&key=${process.env.API_KEY}`;
+                            validUris.push(fullUri);
+                            if (!primaryMetadata) primaryMetadata = vid;
+                        }
+                    }
+                }
+
+                if (validUris.length === 0) {
+                    const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+                    throw firstError?.reason || new Error("Video generation failed (No valid URIs).");
+                }
+
+                return {
+                    uri: validUris[0],
+                    uris: validUris,
+                    videoMetadata: primaryMetadata,
+                    isFallbackImage: false
+                };
+
+            } catch (e: any) {
+                console.warn("Veo Generation Failed. Falling back to Image.", e);
+                try {
+                    const fallbackPrompt = "Cinematic movie still, " + enhancedPrompt;
+                    const inputImages = finalInputImageBase64 ? [finalInputImageBase64] : [];
+                    const imgs = await generateImageFromText(fallbackPrompt, 'gemini-2.5-flash-image', inputImages, { aspectRatio: options.aspectRatio }, context);
+                    return { uri: imgs[0], isFallbackImage: true };
+                } catch (imgErr) {
+                    throw new Error("Video generation failed and Image fallback also failed: " + getErrorMessage(e));
+                }
+            }
+        },
+        {
+            model,
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            options,
+            inputs: {
+                hasImage: !!inputImageBase64,
+                hasVideo: !!videoInput,
+                referenceImagesCount: referenceImages?.length || 0
+            }
+        },
+        context
+    );
 };
 
-export const analyzeVideo = async (videoBase64OrUrl: string, prompt: string, model: string): Promise<string> => {
-    const ai = getClient();
-    let inlineData: any = null;
+export const analyzeVideo = async (
+    videoBase64OrUrl: string,
+    prompt: string,
+    model: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<string> => {
+    return logAPICall(
+        'analyzeVideo',
+        async () => {
+            const ai = getClient();
+            let inlineData: any = null;
 
-    if (videoBase64OrUrl.startsWith('data:')) {
-        const mime = videoBase64OrUrl.match(/^data:(video\/\w+);base64,/)?.[1] || 'video/mp4';
-        const data = videoBase64OrUrl.replace(/^data:video\/\w+;base64,/, "");
-        inlineData = { mimeType: mime, data };
-    } else {
-        throw new Error("Direct URL analysis not implemented in this demo. Please use uploaded videos.");
-    }
+            if (videoBase64OrUrl.startsWith('data:')) {
+                const mime = videoBase64OrUrl.match(/^data:(video\/\w+);base64,/)?.[1] || 'video/mp4';
+                const data = videoBase64OrUrl.replace(/^data:video\/\w+;base64,/, "");
+                inlineData = { mimeType: mime, data };
+            } else {
+                throw new Error("Direct URL analysis not implemented in this demo. Please use uploaded videos.");
+            }
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: {
-            parts: [
-                { inlineData },
-                { text: prompt }
-            ]
-        }
-    });
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { inlineData },
+                        { text: prompt }
+                    ]
+                }
+            });
 
-    return response.text || "Analysis failed";
+            return response.text || "Analysis failed";
+        },
+        {
+            model,
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            hasVideo: videoBase64OrUrl.startsWith('data:')
+        },
+        context
+    );
 };
 
 export const editImageWithText = async (imageBase64: string, prompt: string, model: string): Promise<string> => {
@@ -728,61 +809,80 @@ export const editImageWithText = async (imageBase64: string, prompt: string, mod
      return imgs[0];
 };
 
-export const planStoryboard = async (prompt: string, context: string): Promise<string[]> => {
-    const ai = getClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: { 
-            responseMimeType: 'application/json',
-            systemInstruction: STORYBOARD_INSTRUCTION 
+export const planStoryboard = async (
+    prompt: string,
+    context: string,
+    apiContext?: { nodeId?: string; nodeType?: string }
+): Promise<string[]> => {
+    return logAPICall(
+        'planStoryboard',
+        async () => {
+            const ai = getClient();
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    responseMimeType: 'application/json',
+                    systemInstruction: STORYBOARD_INSTRUCTION
+                },
+                contents: { parts: [{ text: `Context: ${context}\n\nUser Idea: ${prompt}` }] }
+            });
+
+            try {
+                return JSON.parse(response.text || "[]");
+            } catch {
+                return [];
+            }
         },
-        contents: { parts: [{ text: `Context: ${context}\n\nUser Idea: ${prompt}` }] }
-    });
-    
-    try {
-        return JSON.parse(response.text || "[]");
-    } catch {
-        return [];
-    }
+        {
+            model: 'gemini-2.5-flash',
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            contextLength: context.length
+        },
+        apiContext
+    );
 };
 
 export const generateScriptPlanner = async (
     prompt: string,
     config: { theme?: string, genre?: string, setting?: string, episodes?: number, duration?: number, visualStyle?: string },
-    refinedInfo?: Record<string, string[]>  // 可选的剧目精炼信息
+    refinedInfo?: Record<string, string[]>,
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<string> => {
-    const ai = getClient();
+    return logAPICall(
+        'generateScriptPlanner',
+        async () => {
+            const ai = getClient();
 
-    // 构建精炼信息参考文本
-    let refinedReference = '';
-    if (refinedInfo && Object.keys(refinedInfo).length > 0) {
-        refinedReference = '\n\n【参考信息 - 来自剧目精炼】\n';
-        refinedReference += '以下信息仅作为创作参考，不要完全照搬，而是融入你的创意中：\n\n';
+            // 构建精炼信息参考文本
+            let refinedReference = '';
+            if (refinedInfo && Object.keys(refinedInfo).length > 0) {
+                refinedReference = '\n\n【参考信息 - 来自剧目精炼】\n';
+                refinedReference += '以下信息仅作为创作参考，不要完全照搬，而是融入你的创意中：\n\n';
 
-        const fieldLabels: Record<string, string> = {
-            dramaIntroduction: '剧集介绍参考',
-            worldview: '世界观参考',
-            logicalConsistency: '逻辑自洽性参考',
-            extensibility: '延展性参考',
-            characterTags: '角色特征参考',
-            protagonistArc: '主角弧光参考',
-            audienceResonance: '受众共鸣参考',
-            artStyle: '画风参考'
-        };
+                const fieldLabels: Record<string, string> = {
+                    dramaIntroduction: '剧集介绍参考',
+                    worldview: '世界观参考',
+                    logicalConsistency: '逻辑自洽性参考',
+                    extensibility: '延展性参考',
+                    characterTags: '角色特征参考',
+                    protagonistArc: '主角弧光参考',
+                    audienceResonance: '受众共鸣参考',
+                    artStyle: '画风参考'
+                };
 
-        for (const [key, values] of Object.entries(refinedInfo)) {
-            if (values && values.length > 0) {
-                const label = fieldLabels[key] || key;
-                refinedReference += `${label}:\n`;
-                values.forEach(v => {
-                    refinedReference += `  - ${v}\n`;
-                });
-                refinedReference += '\n';
+                for (const [key, values] of Object.entries(refinedInfo)) {
+                    if (values && values.length > 0) {
+                        const label = fieldLabels[key] || key;
+                        refinedReference += `${label}:\n`;
+                        values.forEach(v => {
+                            refinedReference += `  - ${v}\n`;
+                        });
+                        refinedReference += '\n';
+                    }
+                }
             }
-        }
-    }
 
-    const fullPrompt = `
+            const fullPrompt = `
     核心创意: ${prompt}
     主题: ${config.theme || 'N/A'}
     类型: ${config.genre || 'N/A'}
@@ -792,13 +892,22 @@ export const generateScriptPlanner = async (
     视觉风格: ${config.visualStyle || 'N/A'}${refinedReference}
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: { systemInstruction: SCRIPT_PLANNER_INSTRUCTION },
-        contents: { parts: [{ text: fullPrompt }] }
-    });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: { systemInstruction: SCRIPT_PLANNER_INSTRUCTION },
+                contents: { parts: [{ text: fullPrompt }] }
+            });
 
-    return response.text || "";
+            return response.text || "";
+        },
+        {
+            model: 'gemini-2.5-flash',
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            config,
+            hasRefinedInfo: !!refinedInfo && Object.keys(refinedInfo).length > 0
+        },
+        context
+    );
 };
 
 export const generateScriptEpisodes = async (
@@ -807,10 +916,14 @@ export const generateScriptEpisodes = async (
     splitCount: number,
     duration: number,
     style?: string,
-    modificationSuggestion?: string
+    modificationSuggestion?: string,
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<{ title: string, content: string, characters: string }[]> => {
-    const ai = getClient();
-    const prompt = `
+    return logAPICall(
+        'generateScriptEpisodes',
+        async () => {
+            const ai = getClient();
+            const prompt = `
     Input Outline: ${outline}
     Target Chapter: ${chapter}
     Split into ${splitCount} episodes.
@@ -819,22 +932,33 @@ export const generateScriptEpisodes = async (
     ${modificationSuggestion ? `\n修改建议 (User Modification Suggestions): ${modificationSuggestion}` : ''}
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: {
-            systemInstruction: SCRIPT_EPISODE_INSTRUCTION,
-            responseMimeType: 'application/json'
-        },
-        contents: { parts: [{ text: prompt }] }
-    });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    systemInstruction: SCRIPT_EPISODE_INSTRUCTION,
+                    responseMimeType: 'application/json'
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
 
-    try {
-        const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
-        return JSON.parse(text);
-    } catch (e) {
-        console.error("Failed to parse script episodes JSON", e);
-        throw new Error("生成剧本格式错误，请重试");
-    }
+            try {
+                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                return JSON.parse(text);
+            } catch (e) {
+                console.error("Failed to parse script episodes JSON", e);
+                throw new Error("生成剧本格式错误，请重试");
+            }
+        },
+        {
+            model: 'gemini-2.5-flash',
+            chapter,
+            splitCount,
+            duration,
+            style,
+            hasModification: !!modificationSuggestion
+        },
+        context
+    );
 };
 
 export const generateDetailedStoryboard = async (
@@ -842,65 +966,79 @@ export const generateDetailedStoryboard = async (
     episodeContent: string,
     totalDuration: number, // in seconds
     visualStyle: string,
-    onShotGenerated?: (shot: import('../types').DetailedStoryboardShot) => void
+    onShotGenerated?: (shot: import('../types').DetailedStoryboardShot) => void,
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<import('../types').DetailedStoryboardShot[]> => {
-    console.log('[generateDetailedStoryboard] Starting generation with:', { episodeTitle, totalDuration, visualStyle });
+    return logAPICall(
+        'generateDetailedStoryboard',
+        async () => {
+            console.log('[generateDetailedStoryboard] Starting generation with:', { episodeTitle, totalDuration, visualStyle });
 
-    const ai = getClient();
-    const prompt = `
+            const ai = getClient();
+            const prompt = `
     Episode Title: ${episodeTitle}
     Episode Content: ${episodeContent}
     Total Duration: ${totalDuration} seconds
     Visual Style: ${visualStyle}
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: {
-            systemInstruction: DETAILED_STORYBOARD_INSTRUCTION,
-            responseMimeType: 'application/json'
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    systemInstruction: DETAILED_STORYBOARD_INSTRUCTION,
+                    responseMimeType: 'application/json'
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
+
+            try {
+                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                console.log('[generateDetailedStoryboard] Received response, parsing...');
+
+                const rawShots = JSON.parse(text);
+                console.log('[generateDetailedStoryboard] Parsed shots count:', rawShots.length);
+
+                let currentTime = 0;
+                const shots: import('../types').DetailedStoryboardShot[] = rawShots.map((rawShot: any, index: number) => {
+                    const startTime = currentTime;
+                    const duration = rawShot.duration || 4;
+                    const endTime = currentTime + duration;
+                    currentTime = endTime;
+
+                    return {
+                        id: `shot-${Date.now()}-${index}`,
+                        shotNumber: rawShot.shotNumber || (index + 1),
+                        duration,
+                        scene: rawShot.scene || '',
+                        characters: Array.isArray(rawShot.characters) ? rawShot.characters : [],
+                        shotType: rawShot.shotType || '',
+                        cameraAngle: rawShot.cameraAngle || '',
+                        cameraMovement: rawShot.cameraMovement || '',
+                        visualDescription: rawShot.visualDescription || '',
+                        dialogue: rawShot.dialogue || '无',
+                        visualEffects: rawShot.visualEffects || '',
+                        audioEffects: rawShot.audioEffects || '',
+                        startTime,
+                        endTime
+                    };
+                });
+
+                console.log('[generateDetailedStoryboard] Successfully generated', shots.length, 'shots');
+                return shots;
+            } catch (e) {
+                console.error("[generateDetailedStoryboard] Error:", e);
+                throw new Error("分镜生成格式错误，请重试");
+            }
         },
-        contents: { parts: [{ text: prompt }] }
-    });
-
-    try {
-        const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
-        console.log('[generateDetailedStoryboard] Received response, parsing...');
-
-        const rawShots = JSON.parse(text);
-        console.log('[generateDetailedStoryboard] Parsed shots count:', rawShots.length);
-
-        let currentTime = 0;
-        const shots: import('../types').DetailedStoryboardShot[] = rawShots.map((rawShot: any, index: number) => {
-            const startTime = currentTime;
-            const duration = rawShot.duration || 4;
-            const endTime = currentTime + duration;
-            currentTime = endTime;
-
-            return {
-                id: `shot-${Date.now()}-${index}`,
-                shotNumber: rawShot.shotNumber || (index + 1),
-                duration,
-                scene: rawShot.scene || '',
-                characters: Array.isArray(rawShot.characters) ? rawShot.characters : [],
-                shotType: rawShot.shotType || '',
-                cameraAngle: rawShot.cameraAngle || '',
-                cameraMovement: rawShot.cameraMovement || '',
-                visualDescription: rawShot.visualDescription || '',
-                dialogue: rawShot.dialogue || '无',
-                visualEffects: rawShot.visualEffects || '',
-                audioEffects: rawShot.audioEffects || '',
-                startTime,
-                endTime
-            };
-        });
-
-        console.log('[generateDetailedStoryboard] Successfully generated', shots.length, 'shots');
-        return shots;
-    } catch (e) {
-        console.error("[generateDetailedStoryboard] Error:", e);
-        throw new Error("分镜生成格式错误，请重试");
-    }
+        {
+            model: 'gemini-2.5-flash',
+            episodeTitle,
+            totalDuration,
+            visualStyle,
+            contentLength: episodeContent.length
+        },
+        context
+    );
 };
 
 // Helper function to extract completed shot objects from streaming JSON
@@ -1005,59 +1143,88 @@ export const generateCinematicStoryboard = async (
     episodeScript: string,
     shotCount: number,
     shotDuration: number,
-    style: string
+    style: string,
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<StoryboardShot[]> => {
-    const ai = getClient();
-    const prompt = `
+    return logAPICall(
+        'generateCinematicStoryboard',
+        async () => {
+            const ai = getClient();
+            const prompt = `
     Episode Script: ${episodeScript}
     Shot Count: ${shotCount}
     Shot Duration: ${shotDuration}s
     Visual Style: ${style}
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview', 
-        config: { 
-            systemInstruction: CINEMATIC_STORYBOARD_INSTRUCTION,
-            responseMimeType: 'application/json'
-        },
-        contents: { parts: [{ text: prompt }] }
-    });
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-pro-preview',
+                config: {
+                    systemInstruction: CINEMATIC_STORYBOARD_INSTRUCTION,
+                    responseMimeType: 'application/json'
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
 
-    try {
-        const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
-        const rawShots = JSON.parse(text);
-        
-        return rawShots.map((shot: any, index: number) => ({
-            id: `shot-${Date.now()}-${index}`,
-            subject: shot.subject || "N/A",
-            scene: shot.scene || "N/A",
-            camera: shot.camera || "N/A",
-            lighting: shot.lighting || "N/A",
-            dynamics: shot.dynamics || "N/A",
-            audio: shot.audio || "N/A",
-            style: shot.style || "N/A",
-            negative: shot.negative || "",
-            duration: shotDuration
-        }));
-    } catch (e) {
-        console.error("Failed to parse storyboard JSON", e);
-        throw new Error("分镜生成失败，请重试");
-    }
+            try {
+                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                const rawShots = JSON.parse(text);
+
+                return rawShots.map((shot: any, index: number) => ({
+                    id: `shot-${Date.now()}-${index}`,
+                    subject: shot.subject || "N/A",
+                    scene: shot.scene || "N/A",
+                    camera: shot.camera || "N/A",
+                    lighting: shot.lighting || "N/A",
+                    dynamics: shot.dynamics || "N/A",
+                    audio: shot.audio || "N/A",
+                    style: shot.style || "N/A",
+                    negative: shot.negative || "",
+                    duration: shotDuration
+                }));
+            } catch (e) {
+                console.error("Failed to parse storyboard JSON", e);
+                throw new Error("分镜生成失败，请重试");
+            }
+        },
+        {
+            model: 'gemini-3-pro-preview',
+            shotCount,
+            shotDuration,
+            style,
+            scriptLength: episodeScript.length
+        },
+        context
+    );
 };
 
-export const orchestrateVideoPrompt = async (images: string[], userPrompt: string): Promise<string> => {
-     const ai = getClient();
-     const parts: Part[] = images.map(img => ({ inlineData: { data: img.replace(/^data:.*;base64,/, ""), mimeType: "image/png" } }));
-     parts.push({ text: `Create a single video prompt that transitions between these images. User Intent: ${userPrompt}` });
-     
-     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: { systemInstruction: VIDEO_ORCHESTRATOR_INSTRUCTION },
-        contents: { parts }
-     });
-     
-     return response.text || userPrompt;
+export const orchestrateVideoPrompt = async (
+    images: string[],
+    userPrompt: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<string> => {
+    return logAPICall(
+        'orchestrateVideoPrompt',
+        async () => {
+            const ai = getClient();
+            const parts: Part[] = images.map(img => ({ inlineData: { data: img.replace(/^data:.*;base64,/, ""), mimeType: "image/png" } }));
+            parts.push({ text: `Create a single video prompt that transitions between these images. User Intent: ${userPrompt}` });
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: { systemInstruction: VIDEO_ORCHESTRATOR_INSTRUCTION },
+                contents: { parts }
+            });
+
+            return response.text || userPrompt;
+        },
+        {
+            model: 'gemini-2.5-flash',
+            prompt: userPrompt.substring(0, 200) + (userPrompt.length > 200 ? '...' : ''),
+            imageCount: images.length
+        },
+        context
+    );
 };
 
 export const compileMultiFramePrompt = (frames: any[]) => {
@@ -1065,56 +1232,82 @@ export const compileMultiFramePrompt = (frames: any[]) => {
 };
 
 export const generateAudio = async (
-    prompt: string, 
-    referenceAudio?: string, 
-    options?: { persona?: any, emotion?: any }
+    prompt: string,
+    referenceAudio?: string,
+    options?: { persona?: any, emotion?: any },
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<string> => {
-    const ai = getClient();
-    
-    const parts: Part[] = [{ text: prompt }];
-    if (referenceAudio) {
-         const mime = referenceAudio.match(/^data:(audio\/\w+);base64,/)?.[1] || 'audio/wav';
-         const data = referenceAudio.replace(/^data:audio\/\w+;base64,/, "");
-         parts.push({ inlineData: { mimeType: mime, data } });
-    }
-    
-    const voiceName = options?.persona?.label === 'Deep Narrative' ? 'Kore' : 'Puck'; 
-    
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: { parts },
-        config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-                voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName }
-                }
+    return logAPICall(
+        'generateAudio',
+        async () => {
+            const ai = getClient();
+
+            const parts: Part[] = [{ text: prompt }];
+            if (referenceAudio) {
+                const mime = referenceAudio.match(/^data:(audio\/\w+);base64,/)?.[1] || 'audio/wav';
+                const data = referenceAudio.replace(/^data:audio\/\w+;base64,/, "");
+                parts.push({ inlineData: { mimeType: mime, data } });
             }
-        }
-    });
-    
-    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!audioData) throw new Error("Audio generation failed");
-    
-    return pcmToWav(audioData);
+
+            const voiceName = options?.persona?.label === 'Deep Narrative' ? 'Kore' : 'Puck';
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-preview-tts',
+                contents: { parts },
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName }
+                        }
+                    }
+                }
+            });
+
+            const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (!audioData) throw new Error("Audio generation failed");
+
+            return pcmToWav(audioData);
+        },
+        {
+            model: 'gemini-2.5-flash-preview-tts',
+            prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
+            hasReferenceAudio: !!referenceAudio,
+            voiceName: options?.persona?.label === 'Deep Narrative' ? 'Kore' : 'Puck'
+        },
+        context
+    );
 };
 
-export const transcribeAudio = async (audioBase64: string): Promise<string> => {
-    const ai = getClient();
-    const mime = audioBase64.match(/^data:(audio\/\w+);base64,/)?.[1] || 'audio/wav';
-    const data = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
-    
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-            parts: [
-                { inlineData: { mimeType: mime, data } },
-                { text: "Transcribe this audio strictly verbatim." }
-            ]
-        }
-    });
-    
-    return response.text || "";
+export const transcribeAudio = async (
+    audioBase64: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<string> => {
+    return logAPICall(
+        'transcribeAudio',
+        async () => {
+            const ai = getClient();
+            const mime = audioBase64.match(/^data:(audio\/\w+);base64,/)?.[1] || 'audio/wav';
+            const data = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: {
+                    parts: [
+                        { inlineData: { mimeType: mime, data } },
+                        { text: "Transcribe this audio strictly verbatim." }
+                    ]
+                }
+            });
+
+            return response.text || "";
+        },
+        {
+            model: 'gemini-2.5-flash',
+            hasAudio: true
+        },
+        context
+    );
 };
 
 export const connectLiveSession = async (
@@ -1147,68 +1340,150 @@ export const connectLiveSession = async (
 
 // --- Character Generation Services ---
 
-export const extractCharactersFromText = async (text: string): Promise<string[]> => {
-    const ai = getClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: { 
-            responseMimeType: 'application/json',
-            systemInstruction: CHARACTER_EXTRACTION_INSTRUCTION
+export const extractCharactersFromText = async (
+    text: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<string[]> => {
+    return logAPICall(
+        'extractCharactersFromText',
+        async () => {
+            const ai = getClient();
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    responseMimeType: 'application/json',
+                    systemInstruction: CHARACTER_EXTRACTION_INSTRUCTION
+                },
+                contents: { parts: [{ text: `提取以下剧本内容中的所有角色名：\n${text}` }] }
+            });
+            try {
+                const json = JSON.parse(response.text || "[]");
+                return Array.isArray(json) ? json : [];
+            } catch {
+                return [];
+            }
         },
-        contents: { parts: [{ text: `提取以下剧本内容中的所有角色名：\n${text}` }] }
-    });
-    try {
-        const json = JSON.parse(response.text || "[]");
-        return Array.isArray(json) ? json : [];
-    } catch {
-        return [];
-    }
+        {
+            model: 'gemini-2.5-flash',
+            textLength: text.length
+        },
+        context
+    );
 };
 
 export const generateCharacterProfile = async (
-    name: string, 
-    context: string, 
+    name: string,
+    contextText: string,
     styleContext?: string,
-    customDesc?: string
+    customDesc?: string,
+    apiContext?: { nodeId?: string; nodeType?: string }
 ): Promise<CharacterProfile> => {
-    const ai = getClient();
-    const prompt = `
+    return logAPICall(
+        'generateCharacterProfile',
+        async () => {
+            const ai = getClient();
+            const prompt = `
     Role Name: ${name}
-    Script Context: ${context}
+    Script Context: ${contextText}
     Visual Style Context (CRITICAL): ${styleContext || "Default"}
     ${customDesc ? `Additional User Description: ${customDesc}` : 'Auto-complete details based on context.'}
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        config: {
-            responseMimeType: 'application/json',
-            systemInstruction: CHARACTER_PROFILE_INSTRUCTION
-        },
-        contents: { parts: [{ text: prompt }] }
-    });
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-pro-preview',
+                config: {
+                    responseMimeType: 'application/json',
+                    systemInstruction: CHARACTER_PROFILE_INSTRUCTION
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
 
-    try {
-        const raw = JSON.parse(response.text || "{}");
-        // Ensure shape
-        return {
-            id: `char-${Date.now()}-${Math.random()}`,
-            name: raw.name || name,
-            alias: raw.alias,
-            basicStats: raw.basicStats,
-            profession: raw.profession,
-            personality: raw.personality,
-            motivation: raw.motivation,
-            values: raw.values,
-            weakness: raw.weakness,
-            relationships: raw.relationships,
-            habits: raw.habits,
-            appearance: raw.appearancePrompt, // Use specific prompt for image gen
-            rawProfileData: raw
-        };
-    } catch (e) {
-        throw new Error("Character profile generation failed format");
-    }
+            try {
+                const raw = JSON.parse(response.text || "{}");
+                // Ensure shape
+                return {
+                    id: `char-${Date.now()}-${Math.random()}`,
+                    name: raw.name || name,
+                    alias: raw.alias,
+                    basicStats: raw.basicStats,
+                    profession: raw.profession,
+                    personality: raw.personality,
+                    motivation: raw.motivation,
+                    values: raw.values,
+                    weakness: raw.weakness,
+                    relationships: raw.relationships,
+                    habits: raw.habits,
+                    appearance: raw.appearancePrompt, // Use specific prompt for image gen
+                    rawProfileData: raw
+                };
+            } catch (e) {
+                throw new Error("Character profile generation failed format");
+            }
+        },
+        {
+            model: 'gemini-3-pro-preview',
+            characterName: name,
+            hasStyleContext: !!styleContext,
+            hasCustomDesc: !!customDesc,
+            contextLength: contextText.length
+        },
+        apiContext
+    );
+};
+
+// Generate simplified profile for supporting characters
+export const generateSupportingCharacter = async (
+    name: string,
+    contextText: string,
+    styleContext?: string,
+    apiContext?: { nodeId?: string; nodeType?: string }
+): Promise<CharacterProfile> => {
+    return logAPICall(
+        'generateSupportingCharacter',
+        async () => {
+            const ai = getClient();
+            const prompt = `
+    Role Name: ${name}
+    Script Context: ${contextText}
+    Visual Style Context (CRITICAL): ${styleContext || "Default"}
+    This is a SUPPORTING CHARACTER - keep it simple and concise.
+    `;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    responseMimeType: 'application/json',
+                    systemInstruction: SUPPORTING_CHARACTER_INSTRUCTION
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
+
+            try {
+                const raw = JSON.parse(response.text || "{}");
+                // Return simplified profile
+                return {
+                    id: `char-${Date.now()}-${Math.random()}`,
+                    name: raw.name || name,
+                    roleType: 'supporting',
+                    basicStats: raw.basicStats,
+                    profession: raw.profession,
+                    personality: raw.introduction, // Use introduction as personality for supporting chars
+                    appearance: raw.appearancePrompt,
+                    rawProfileData: raw
+                };
+            } catch (e) {
+                throw new Error("Supporting character generation failed format");
+            }
+        },
+        {
+            model: 'gemini-2.5-flash',
+            characterName: name,
+            roleType: 'supporting',
+            hasStyleContext: !!styleContext,
+            contextLength: contextText.length
+        },
+        apiContext
+    );
 };
 
 // --- Drama Analyzer Service ---
@@ -1225,9 +1500,15 @@ export interface DramaAnalysisResult {
     artStyle: string;
 }
 
-export const analyzeDrama = async (dramaName: string): Promise<DramaAnalysisResult> => {
-    const ai = getClient();
-    const prompt = `
+export const analyzeDrama = async (
+    dramaName: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<DramaAnalysisResult> => {
+    return logAPICall(
+        'analyzeDrama',
+        async () => {
+            const ai = getClient();
+            const prompt = `
     请分析以下剧集：${dramaName}
 
     注意：
@@ -1235,34 +1516,41 @@ export const analyzeDrama = async (dramaName: string): Promise<DramaAnalysisResu
     2. 如果你不了解该剧，请在 dramaIntroduction 字段中明确说明，并在其他字段中提供通用的分析框架建议。
     `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        config: {
-            responseMimeType: 'application/json',
-            systemInstruction: DRAMA_ANALYZER_INSTRUCTION
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                config: {
+                    responseMimeType: 'application/json',
+                    systemInstruction: DRAMA_ANALYZER_INSTRUCTION
+                },
+                contents: { parts: [{ text: prompt }] }
+            });
+
+            try {
+                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
+                const raw = JSON.parse(text);
+
+                return {
+                    dramaName: raw.dramaName || dramaName,
+                    dramaIntroduction: raw.dramaIntroduction || '暂无剧集信息',
+                    worldview: raw.worldview || '',
+                    logicalConsistency: raw.logicalConsistency || '',
+                    extensibility: raw.extensibility || '',
+                    characterTags: raw.characterTags || '',
+                    protagonistArc: raw.protagonistArc || '',
+                    audienceResonance: raw.audienceResonance || '',
+                    artStyle: raw.artStyle || ''
+                };
+            } catch (e) {
+                console.error("Drama analysis failed:", e);
+                throw new Error("剧目分析失败，请重试");
+            }
         },
-        contents: { parts: [{ text: prompt }] }
-    });
-
-    try {
-        const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
-        const raw = JSON.parse(text);
-
-        return {
-            dramaName: raw.dramaName || dramaName,
-            dramaIntroduction: raw.dramaIntroduction || '暂无剧集信息',
-            worldview: raw.worldview || '',
-            logicalConsistency: raw.logicalConsistency || '',
-            extensibility: raw.extensibility || '',
-            characterTags: raw.characterTags || '',
-            protagonistArc: raw.protagonistArc || '',
-            audienceResonance: raw.audienceResonance || '',
-            artStyle: raw.artStyle || ''
-        };
-    } catch (e) {
-        console.error("Drama analysis failed:", e);
-        throw new Error("剧目分析失败，请重试");
-    }
+        {
+            model: 'gemini-2.5-flash',
+            dramaName
+        },
+        context
+    );
 };
 
 const DRAMA_REFINED_EXTRACTION_INSTRUCTION = `
@@ -1328,35 +1616,39 @@ const DRAMA_REFINED_EXTRACTION_INSTRUCTION = `
  */
 export const extractRefinedTags = async (
     analysisData: any,
-    selectedFields: string[]
+    selectedFields: string[],
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<Record<string, string[]>> => {
-    const ai = getClient();
+    return logAPICall(
+        'extractRefinedTags',
+        async () => {
+            const ai = getClient();
 
-    // 构建提取提示词
-    const fieldLabels: Record<string, string> = {
-        dramaIntroduction: '剧集介绍',
-        worldview: '世界观分析',
-        logicalConsistency: '逻辑自洽性',
-        extensibility: '延展性分析',
-        characterTags: '角色标签',
-        protagonistArc: '主角弧光',
-        audienceResonance: '受众共鸣点',
-        artStyle: '画风分析'
-    };
+            // 构建提取提示词
+            const fieldLabels: Record<string, string> = {
+                dramaIntroduction: '剧集介绍',
+                worldview: '世界观分析',
+                logicalConsistency: '逻辑自洽性',
+                extensibility: '延展性分析',
+                characterTags: '角色标签',
+                protagonistArc: '主角弧光',
+                audienceResonance: '受众共鸣点',
+                artStyle: '画风分析'
+            };
 
-    const contentToExtract = selectedFields.map(field => {
-        const label = fieldLabels[field] || field;
-        const value = analysisData[field] || '';
-        return `【${label}】\n${value}`;
-    }).join('\n\n');
+            const contentToExtract = selectedFields.map(field => {
+                const label = fieldLabels[field] || field;
+                const value = analysisData[field] || '';
+                return `【${label}】\n${value}`;
+            }).join('\n\n');
 
-    // 构建期望的 JSON 结构说明
-    const expectedFields = selectedFields.map(field => {
-        const label = fieldLabels[field] || field;
-        return `"${field}": ["${label}精炼信息1", "${label}精炼信息2", ...]`;
-    }).join(',\n  ');
+            // 构建期望的 JSON 结构说明
+            const expectedFields = selectedFields.map(field => {
+                const label = fieldLabels[field] || field;
+                return `"${field}": ["${label}精炼信息1", "${label}精炼信息2", ...]`;
+            }).join(',\n  ');
 
-    const prompt = `请从以下剧目分析内容中提取关键信息。
+            const prompt = `请从以下剧目分析内容中提取关键信息。
 
 **输入的分析内容：**
 ${contentToExtract}
@@ -1368,35 +1660,43 @@ ${contentToExtract}
 
 请严格按照上述字段进行提取，只提取这些字段，不要添加其他字段。`;
 
-    try {
-        const response = await ai.models.generateContent({
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    config: {
+                        responseMimeType: 'application/json',
+                        systemInstruction: DRAMA_REFINED_EXTRACTION_INSTRUCTION
+                    },
+                    contents: { parts: [{ text: prompt }] }
+                });
+
+                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
+                const extracted = JSON.parse(text);
+
+                // 动态构建返回对象，只包含用户选择的字段
+                const result: Record<string, string[]> = {};
+                for (const field of selectedFields) {
+                    result[field] = extracted[field] || [];
+                }
+
+                return result;
+            } catch (e) {
+                console.error('提取精炼标签失败:', e);
+                // 返回空结构，包含用户选择的字段
+                const fallback: Record<string, string[]> = {};
+                for (const field of selectedFields) {
+                    fallback[field] = [];
+                }
+                return fallback;
+            }
+        },
+        {
             model: 'gemini-2.5-flash',
-            config: {
-                responseMimeType: 'application/json',
-                systemInstruction: DRAMA_REFINED_EXTRACTION_INSTRUCTION
-            },
-            contents: { parts: [{ text: prompt }] }
-        });
-
-        const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
-        const extracted = JSON.parse(text);
-
-        // 动态构建返回对象，只包含用户选择的字段
-        const result: Record<string, string[]> = {};
-        for (const field of selectedFields) {
-            result[field] = extracted[field] || [];
-        }
-
-        return result;
-    } catch (e) {
-        console.error('提取精炼标签失败:', e);
-        // 返回空结构，包含用户选择的字段
-        const fallback: Record<string, string[]> = {};
-        for (const field of selectedFields) {
-            fallback[field] = [];
-        }
-        return fallback;
-    }
+            selectedFieldsCount: selectedFields.length,
+            selectedFields
+        },
+        context
+    );
 };
 
 // ============================================
@@ -1510,14 +1810,18 @@ export const generateStylePreset = async (
         genre?: string;
         setting?: string;
     },
-    userInput?: string
+    userInput?: string,
+    context?: { nodeId?: string; nodeType?: string }
 ): Promise<{ stylePrompt: string; negativePrompt: string }> => {
-    const ai = getClient();
+    return logAPICall(
+        'generateStylePreset',
+        async () => {
+            const ai = getClient();
 
-    const isScene = presetType === 'SCENE';
-    const systemInstruction = isScene ? SCENE_STYLE_INSTRUCTION : CHARACTER_STYLE_INSTRUCTION;
+            const isScene = presetType === 'SCENE';
+            const systemInstruction = isScene ? SCENE_STYLE_INSTRUCTION : CHARACTER_STYLE_INSTRUCTION;
 
-    const prompt = `请生成一段${isScene ? '场景' : '人物'}风格描述词模板。
+            const prompt = `请生成一段${isScene ? '场景' : '人物'}风格描述词模板。
 
 【上游视觉风格信息】
 画风分析：${upstreamStyleInfo.artStyle || '未提供'}
@@ -1535,40 +1839,50 @@ ${userInput || '无'}
 只包含：画风、${isScene ? '渲染' : '人物绘制'}质量、光影风格、${isScene ? '' : '渲染'}质感等抽象元素。
 这段描述词将作为前缀，用于后续所有${isScene ? '场景' : '人物'}图像生成。`;
 
-    try {
-        const response = await ai.models.generateContent({
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    config: {
+                        systemInstruction,
+                        temperature: 0.7
+                    },
+                    contents: { parts: [{ text: prompt }] }
+                });
+
+                let stylePrompt = response.text?.trim() || '';
+
+                // Remove markdown code blocks if present
+                stylePrompt = stylePrompt.replace(/```/g, '').replace(/^text\n/g, '').trim();
+
+                // Generate negative prompt based on type and style
+                const negativePrompts: Record<string, string> = {
+                    'SCENE_REAL': 'people, characters, humans, anime, cartoon, painting, illustration, 3d render, low quality, blurry, watermark, signature',
+                    'SCENE_ANIME': 'realistic, photo, 3d, low quality, blurry, monochrome, watermark',
+                    'SCENE_3D': '2d, flat, anime, photo, painting, low poly, low quality, blurry',
+                    'CHARACTER_REAL': 'anime, cartoon, illustration, 3d, cgi, bad anatomy, deformed, low quality, blurry, watermark',
+                    'CHARACTER_ANIME': 'realistic, photo, 3d, bad anatomy, bad hands, extra limbs, low quality, blurry, nsfw',
+                    'CHARACTER_3D': '2d, flat, anime, photo, painting, low poly, bad topology, low quality, blurry'
+                };
+
+                const negativeKey = `${presetType}_${visualStyle}`;
+                const negativePrompt = negativePrompts[negativeKey] || 'low quality, blurry, watermark';
+
+                console.log('[generateStylePreset] Generated:', { presetType, visualStyle, stylePrompt, negativePrompt });
+
+                return { stylePrompt, negativePrompt };
+            } catch (e) {
+                console.error('[generateStylePreset] Error:', e);
+                throw new Error('风格提示词生成失败，请重试');
+            }
+        },
+        {
             model: 'gemini-2.5-flash',
-            config: {
-                systemInstruction,
-                temperature: 0.7
-            },
-            contents: { parts: [{ text: prompt }] }
-        });
-
-        let stylePrompt = response.text?.trim() || '';
-
-        // Remove markdown code blocks if present
-        stylePrompt = stylePrompt.replace(/```/g, '').replace(/^text\n/g, '').trim();
-
-        // Generate negative prompt based on type and style
-        const negativePrompts: Record<string, string> = {
-            'SCENE_REAL': 'people, characters, humans, anime, cartoon, painting, illustration, 3d render, low quality, blurry, watermark, signature',
-            'SCENE_ANIME': 'realistic, photo, 3d, low quality, blurry, monochrome, watermark',
-            'SCENE_3D': '2d, flat, anime, photo, painting, low poly, low quality, blurry',
-            'CHARACTER_REAL': 'anime, cartoon, illustration, 3d, cgi, bad anatomy, deformed, low quality, blurry, watermark',
-            'CHARACTER_ANIME': 'realistic, photo, 3d, bad anatomy, bad hands, extra limbs, low quality, blurry, nsfw',
-            'CHARACTER_3D': '2d, flat, anime, photo, painting, low poly, bad topology, low quality, blurry'
-        };
-
-        const negativeKey = `${presetType}_${visualStyle}`;
-        const negativePrompt = negativePrompts[negativeKey] || 'low quality, blurry, watermark';
-
-        console.log('[generateStylePreset] Generated:', { presetType, visualStyle, stylePrompt, negativePrompt });
-
-        return { stylePrompt, negativePrompt };
-    } catch (e) {
-        console.error('[generateStylePreset] Error:', e);
-        throw new Error('风格提示词生成失败，请重试');
-    }
+            presetType,
+            visualStyle,
+            hasUserInput: !!userInput,
+            hasUpstreamInfo: !!(upstreamStyleInfo.artStyle || upstreamStyleInfo.genre || upstreamStyleInfo.setting)
+        },
+        context
+    );
 };
 
