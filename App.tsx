@@ -20,6 +20,7 @@ import { generateSoraVideo, generateMultipleSoraVideos } from './services/soraSe
 import { saveVideoFile, saveReferenceImage, saveVideoMetadata, saveUsageLog } from './services/fileSystemService';
 import { getSoraModelById } from './services/soraConfigService';
 import { generateImageWithFallback } from './services/geminiServiceWithFallback';
+import { handleCharacterAction as handleCharacterActionNew } from './services/characterActionHandler';
 import { getGenerationStrategy } from './services/videoStrategies';
 import { saveToStorage, loadFromStorage } from './services/storage';
 import { getUserPriority, ModelCategory, getDefaultModel, getUserDefaultModel } from './services/modelConfig';
@@ -27,13 +28,14 @@ import { saveImageNodeOutput, saveVideoNodeOutput, saveAudioNodeOutput, saveStor
 import { executeWithFallback } from './services/modelFallback';
 import { validateConnection, canExecuteNode } from './utils/nodeValidation';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { ConnectionLayer } from './components/ConnectionLayer';
+import { MemoizedConnectionLayer } from './components/ConnectionLayer';
 import { CanvasContextMenu } from './components/CanvasContextMenu';
 import { ApiKeyPrompt } from './components/ApiKeyPrompt';
 import { getNodeIcon, getApproxNodeHeight, getNodeBounds } from './utils/nodeHelpers';
 import { useCanvasState } from './hooks/useCanvasState';
 import { useNodeOperations } from './hooks/useNodeOperations';
 import { useHistory } from './hooks/useHistory';
+import { createNodeQuery, useThrottle } from './hooks/usePerformanceOptimization';
 import {
     Plus, Copy, Trash2, Type, Image as ImageIcon, Video as VideoIcon,
     ScanFace, Brush, MousePointerClick, LayoutTemplate, X, Film, Link, RefreshCw, Upload,
@@ -266,21 +268,29 @@ export const App = () => {
   const connectionsRef = useRef(connections);
   const groupsRef = useRef(groups);
   const connectionStartRef = useRef(connectionStart);
+
+  // 性能优化：创建轻量级的节点查询函数
+  // 避免传递整个nodes数组导致所有节点重渲染
+  const nodeQuery = useRef(createNodeQuery(nodesRef));
   const rafRef = useRef<number | null>(null); 
   const replaceVideoInputRef = useRef<HTMLInputElement>(null);
   const replaceImageInputRef = useRef<HTMLInputElement>(null);
   const replacementTargetRef = useRef<string | null>(null);
   
   const dragNodeRef = useRef<{
-      id: string, 
-      startX: number, 
-      startY: number, 
-      mouseStartX: number, 
+      id: string,
+      startX: number,
+      startY: number,
+      mouseStartX: number,
       mouseStartY: number,
       parentGroupId?: string | null,
       siblingNodeIds: string[],
       nodeWidth: number,
-      nodeHeight: number
+      nodeHeight: number,
+      // 多选拖拽支持
+      isMultiDrag?: boolean,
+      selectedNodeIds?: string[],
+      selectedNodesStartPos?: Array<{ id: string, x: number, y: number }>
   } | null>(null);
 
   const resizeContextRef = useRef<{
@@ -668,16 +678,20 @@ export const App = () => {
           }
 
           if (draggingNodeId && dragNodeRef.current && dragNodeRef.current.id === draggingNodeId) {
-             const { startX, startY, mouseStartX, mouseStartY, nodeWidth, nodeHeight } = dragNodeRef.current;
+             const { startX, startY, mouseStartX, mouseStartY, nodeWidth, nodeHeight, isMultiDrag, selectedNodeIds, selectedNodesStartPos } = dragNodeRef.current;
              let dx = (clientX - mouseStartX) / canvas.scale;
              let dy = (clientY - mouseStartY) / canvas.scale;
              let proposedX = startX + dx;
              let proposedY = startY + dy;
+
+             // 磁吸对齐（只对主拖拽节点进行）
              const SNAP = SNAP_THRESHOLD / canvas.scale;
              const myL = proposedX; const myC = proposedX + nodeWidth / 2; const myR = proposedX + nodeWidth;
              const myT = proposedY; const myM = proposedY + nodeHeight / 2; const myB = proposedY + nodeHeight;
              let snappedX = false; let snappedY = false;
              nodesRef.current.forEach(other => {
+                 // 多选时跳过其他选中的节点
+                 if (isMultiDrag && selectedNodeIds?.includes(other.id)) return;
                  if (other.id === draggingNodeId) return;
                  const otherBounds = getNodeBounds(other);
                  if (!snappedX) {
@@ -695,7 +709,26 @@ export const App = () => {
                      else if (Math.abs(myM - (otherBounds.y+otherBounds.height/2)) < SNAP) { proposedY = (otherBounds.y+otherBounds.height/2) - nodeHeight/2; snappedY = true; }
                  }
              });
-             setNodes(prev => prev.map(n => n.id === draggingNodeId ? { ...n, x: proposedX, y: proposedY } : n));
+
+             // 计算最终位移（考虑磁吸）
+             const finalDx = proposedX - startX;
+             const finalDy = proposedY - startY;
+
+             if (isMultiDrag && selectedNodeIds && selectedNodesStartPos) {
+                 // 多选拖拽：移动所有选中的节点
+                 setNodes(prev => prev.map(n => {
+                     if (selectedNodeIds.includes(n.id)) {
+                         const startPos = selectedNodesStartPos.find(p => p.id === n.id);
+                         if (startPos) {
+                             return { ...n, x: startPos.x + finalDx, y: startPos.y + finalDy };
+                         }
+                     }
+                     return n;
+                 }));
+             } else {
+                 // 单个节点拖拽
+                 setNodes(prev => prev.map(n => n.id === draggingNodeId ? { ...n, x: proposedX, y: proposedY } : n));
+             }
           }
 
           if (resizingNodeId && initialSize && resizeStartPos) {
@@ -734,26 +767,8 @@ export const App = () => {
                   return cx>rect.x && cx<rect.x+rect.w && cy>rect.y && cy<rect.y+rect.h;
               });
               if (enclosed.length > 0) {
-                  saveHistory();
-                  const freeNodes = enclosed.filter(n => {
-                      const cx = n.x + (n.width || 420) / 2;
-                      const cy = n.y + 160;
-                      return !groupsRef.current.some(g => cx > g.x && cx < g.x + g.width && cy > g.y && cy < g.y + g.height);
-                  });
-                  if (freeNodes.length > 0) {
-                      const fMinX=Math.min(...freeNodes.map(n=>n.x));
-                      const fMinY=Math.min(...freeNodes.map(n=>n.y));
-                      const fMaxX=Math.max(...freeNodes.map(n=>n.x+(n.width||420)));
-                      const fMaxY=Math.max(...freeNodes.map(n=>n.y+320));
-                      setGroups(prev => [...prev, {
-                          id: `g-${Date.now()}`,
-                          title: '新建分组',
-                          x: fMinX-32,
-                          y: fMinY-32,
-                          width: (fMaxX-fMinX)+64,
-                          height: (fMaxY-fMinY)+64
-                      }]);
-                  }
+                  // 选中框选的节点（移除自动创建分组的逻辑）
+                  setSelectedNodeIds(enclosed.map(n => n.id));
               }
           }
           setSelectionRect(null);
@@ -852,7 +867,7 @@ export const App = () => {
       if (style === 'ANIME') {
           base = 'Anime style, Japanese 2D animation, vibrant colors, Studio Ghibli style, clean lines, high detail, 8k resolution, cel shaded, flat color, expressive characters.';
       } else if (style === '3D') {
-          base = 'Photorealistic 3D render, highly realistic human characters, lifelike skin textures, natural subsurface scattering, realistic eyes with detailed iris, accurate anatomy, high-fidelity 3D modeling, Unreal Engine 5, MetaHuman, cinematic lighting, volumetric light ray, global illumination, screen space reflections, 8k resolution, photorealistic materials, detailed fabric textures, realistic hair strands, natural skin pores and imperfections, live action quality.';
+          base = '3D animated character, stylized 3D render, toon shading, cel shading, artistic rendering, non-photorealistic, smooth stylized skin, clean surfaces, vibrant colors, 3D anime aesthetics, 3D animation quality.';
       } else {
           // Default to REAL
           base = 'Cinematic, Photorealistic, 8k, raw photo, hyperrealistic, movie still, live action, cinematic lighting, Arri Alexa, depth of field, film grain, color graded.';
@@ -989,631 +1004,15 @@ export const App = () => {
       const node = nodesRef.current.find(n => n.id === nodeId);
       if (!node) return;
 
-      const generated = [...(node.data.generatedCharacters || [])];
-      const extracted = [...(node.data.extractedCharacterNames || [])];
-
-      if (action === 'DELETE') {
-          const newExtracted = extracted.filter(n => n !== charName);
-          const newGenerated = generated.filter(c => c.name !== charName);
-          handleNodeUpdate(nodeId, { extractedCharacterNames: newExtracted, generatedCharacters: newGenerated });
-      }
-      
-      else if (action === 'SAVE') {
-          // Trigger 3-View generation if missing, then Save
-          let char = generated.find(c => c.name === charName);
-          if (!char) return;
-
-          // 1. Check if 3-View needs generation
-          if (!char.threeViewSheet) {
-              // Update status
-              const updatedGenerated = generated.map(c => c.name === charName ? { ...c, isSaved: true } : c); // Hack: use isSaved as loading indicator in UI
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-
-              // Extract style preset from inputs (priority: STYLE_PRESET > upstream context)
-              const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
-              const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
-              let stylePrefix = '';
-
-              if (stylePresetNode?.data.stylePrompt) {
-                  // Use style preset if connected
-                  stylePrefix = stylePresetNode.data.stylePrompt;
-              } else {
-                  // Fallback to unified helper
-                  const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
-                  stylePrefix = getVisualPromptPrefix(style, genre, setting);
-              }
-
-              try {
-                  const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
-                  
-                  const viewPrompt = `
-                  ${stylePrefix}
-
-                  CHARACTER THREE-VIEW GENERATION TASK:
-                  Generate a character three-view reference sheet (front, side, back views).
-
-                  Character Description:
-                  ${char.appearance}
-
-                  Attributes: ${char.basicStats}
-
-                  COMPOSITION:
-                  - Create a vertical layout with 3 views: Front View, Side View (profile), Back View
-                  - Full body standing pose, neutral expression
-                  - Clean white or neutral background
-                  - Each view should clearly show the character from the specified angle
-
-                  CRITICAL REQUIREMENTS:
-                  1. CONSISTENT CHARACTER DESIGN - All three views must show the SAME character with consistent facial features, hair style, body proportions, and clothing
-                  2. NO TEXT, NO LABELS - Pure image only, no "Front View" or "Side View" text labels, no Chinese characters, no English text
-                  3. PROPER ANATOMY - Ensure correct body proportions and natural stance for each view angle
-                  4. NEUTRAL EXPRESSION - Use a calm, neutral face expression across all views
-                  5. CLEAR ALIGNMENT - Front, side, and back views should be vertically aligned and proportionally consistent
-
-                  ${char.expressionSheet ? 'REFERENCE IMAGE: Use the expression sheet as visual reference for face and clothing details.' : ''}
-
-                  Negative Prompt: ${negativePrompt}, text, labels, writing, letters, watermark, signature, bad anatomy, deformed, low quality, chinese characters, english text, interface elements, stats, info boxes
-                  `;
-                  
-                  // Use Expression Sheet as Input Image reference if available
-                  const inputImages = char.expressionSheet ? [char.expressionSheet] : [];
-                  
-                  let viewImages: string[] = [];
-                  let hasText = true;
-                  let attempt = 0;
-                  const MAX_ATTEMPTS = 3;
-
-                  // Retry Loop
-                  while (hasText && attempt < MAX_ATTEMPTS) {
-                      if (attempt > 0) {
-                          const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
-                          viewImages = await generateImageFromText(retryPrompt, getUserDefaultModel('image'), inputImages, { aspectRatio: '16:9', resolution: '2K', count: 1 });
-                      } else {
-                          viewImages = await generateImageFromText(viewPrompt, getUserDefaultModel('image'), inputImages, { aspectRatio: '16:9', resolution: '2K', count: 1 });
-                      }
-
-                      if (viewImages.length > 0) {
-                          // Check for text
-                          hasText = await detectTextInImage(viewImages[0]);
-                          if (hasText) {
-                              console.log(`Text detected in generated 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
-                          }
-                      }
-                      attempt++;
-                  }
-                  
-                  // Use the last generated image even if it might still have text (after max retries)
-                  // Update char object
-                  char = { ...char, threeViewSheet: viewImages[0], isSaved: true }; // Final save state
-                  
-                  // Update list
-                  const finalList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
-                  const fIdx = finalList.findIndex(c => c.name === charName);
-                  if (fIdx >= 0) finalList[fIdx] = char;
-                  handleNodeUpdate(nodeId, { generatedCharacters: finalList });
-
-                  // Save to Library
-                  setAssetHistory(h => {
-                      const exists = h.find(a => a.id === char!.id);
-                      if (exists) return h;
-                      return [{ id: char!.id, type: 'character', data: char, title: char!.name, timestamp: Date.now() }, ...h];
-                  });
-
-              } catch (e) {
-                  console.error("Failed to generate 3-view on save", e);
-                  // Revert saved state on error
-                  const revertList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
-                  const rIdx = revertList.findIndex(c => c.name === charName);
-                  if (rIdx >= 0) revertList[rIdx] = { ...revertList[rIdx], isSaved: false };
-                  handleNodeUpdate(nodeId, { generatedCharacters: revertList });
-              }
-          } else {
-              // Already has 3-view, just save
-              const updatedGenerated = generated.map(c => c.name === charName ? { ...c, isSaved: true } : c);
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-              
-              setAssetHistory(h => {
-                  const exists = h.find(a => a.id === char!.id);
-                  if (exists) return h;
-                  return [{ id: char!.id, type: 'character', data: { ...char, isSaved: true }, title: char!.name, timestamp: Date.now() }, ...h];
-              });
-          }
-      } 
-      
-      else if (action === 'RETRY') {
-          // RETRY: Regenerate character profile info only (no images)
-          let updatedGenerated = [...generated];
-
-          // Find or create character entry
-          let charIdx = updatedGenerated.findIndex(c => c.name === charName);
-
-          // If character doesn't exist in array, add it first
-          if (charIdx < 0) {
-              const newChar = { id: `${nodeId}-${charName}`, name: charName, status: 'GENERATING' as const } as any;
-              updatedGenerated.push(newChar);
-              charIdx = updatedGenerated.length - 1;
-          } else {
-              updatedGenerated[charIdx] = { ...updatedGenerated[charIdx], status: 'GENERATING' as const, error: undefined };
-          }
-
-          handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-
-          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
-          const upstreamTexts = inputs.map(n => {
-              if (n?.type === NodeType.PROMPT_INPUT) return n.data.prompt;
-              if (n?.type === NodeType.VIDEO_ANALYZER) return n.data.analysis;
-              if (n?.type === NodeType.SCRIPT_EPISODE && n.data.generatedEpisodes) {
-                  return n.data.generatedEpisodes.map(ep => `${ep.title}\n角色: ${ep.characters}`).join('\n');
-              }
-              if (n?.type === NodeType.SCRIPT_PLANNER) return n.data.scriptOutline;
-              return null;
-          }).filter(t => t && t.trim().length > 0) as string[];
-
-          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
-          let stylePrompt = '';
-
-          if (stylePresetNode?.data.stylePrompt) {
-              stylePrompt = stylePresetNode.data.stylePrompt;
-          } else {
-              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
-              stylePrompt = getVisualPromptPrefix(style, genre, setting);
-          }
-
-          const context = upstreamTexts.join('\n');
-          const config = node.data.characterConfigs?.[charName] || { method: 'AI_AUTO' };
-          const customDesc = config.method === 'AI_CUSTOM' ? config.customPrompt : undefined;
-
-          try {
-              const profile = await generateCharacterProfile(
-                  charName,
-                  context,
-                  stylePrompt,
-                  customDesc,
-                  node.data.model || getUserDefaultModel('text'),
-                  { nodeId: nodeId, nodeType: node.type }
-              );
-
-              // Re-fetch from nodesRef to get latest state after async API call
-              const finalList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
-              const fIdx = finalList.findIndex(c => c.name === charName);
-
-              if (fIdx >= 0) {
-                  // Phase 1 complete
-                  // Preserve existing images (expressionSheet, threeViewSheet)
-                  const existingChar = finalList[fIdx];
-                  finalList[fIdx] = {
-                      ...profile,
-                      // Preserve existing image data
-                      expressionSheet: existingChar?.expressionSheet,
-                      threeViewSheet: existingChar?.threeViewSheet,
-                      status: 'SUCCESS' as const
-                  };
-              } else {
-                  // Character not in list - add directly with profile data
-                  console.warn('[RETRY] Character not found in final list, adding new entry');
-                  finalList.push({
-                      ...profile,
-                      id: `${nodeId}-${charName}`,
-                      name: charName,
-                      status: 'SUCCESS' as const
-                  });
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: finalList });
-          } catch (e: any) {
-              const failList = [...(nodesRef.current.find(n => n.id === nodeId)?.data.generatedCharacters || [])];
-              const failIdx = failList.findIndex(c => c.name === charName);
-              if (failIdx >= 0) {
-                  failList[failIdx] = { ...failList[failIdx], status: 'ERROR', error: e.message };
-              } else {
-                  // Character not in list, add it with error status
-                  failList.push({ id: `${nodeId}-${charName}`, name: charName, status: 'ERROR' as const, error: e.message } as any);
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: failList });
-          }
-      }
-
-      else if (action === 'GENERATE_EXPRESSION') {
-          // Phase 2A: Generate expression sheet only
-          let char = generated.find(c => c.name === charName);
-          if (!char) return;
-
-          // Mark as generating - IMPORTANT: Get FRESH data from nodesRef to avoid stale state
-          const freshNode = nodesRef.current.find(n => n.id === nodeId);
-          const freshGenerated = freshNode?.data.generatedCharacters || [];
-          let updatedGenerated = [...freshGenerated];
-          updatedGenerated = updatedGenerated.map(c => c.name === charName ? { ...c, isGeneratingExpression: true } : c);
-          handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-
-          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
-          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
-          let stylePrompt = '';
-
-          if (stylePresetNode?.data.stylePrompt) {
-              stylePrompt = stylePresetNode.data.stylePrompt;
-          } else {
-              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
-              stylePrompt = getVisualPromptPrefix(style, genre, setting);
-          }
-
-          // Re-fetch char from updatedGenerated to get latest state
-          const latestChar = updatedGenerated.find(c => c.name === charName);
-          if (!latestChar) return;
-
-          try {
-              const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui";
-
-              let styleNegative = "";
-              const { style: detectedStyle } = getUpstreamStyleContext(node, nodesRef.current);
-              if (detectedStyle === 'REAL') {
-                  styleNegative = ", anime, cartoon, illustrated, 3d render, cgi, painting, drawing";
-              } else if (detectedStyle === 'ANIME') {
-                  styleNegative = ", photorealistic, realistic, photo, 3d, cgi, live action";
-              } else if (detectedStyle === '3D') {
-                  styleNegative = ", 2d, flat, anime, photo, painting, illustrated";
-              }
-
-              const exprPrompt = `
-              ${stylePrompt}
-
-              PORTRAIT COMPOSITION: Extreme close-up, head and shoulders only, facial expressions focus.
-
-              Character facial expressions reference sheet, 3x3 grid layout showing 9 different facial expressions (joy, anger, sorrow, surprise, fear, disgust, neutral, thinking, tired).
-
-              Character Face Description: ${latestChar.appearance}.
-
-              CRITICAL CONSTRAINTS:
-              - Close-up portrait shots ONLY (head and shoulders)
-              - NO full body, NO lower body, NO legs
-              - Focus on facial features, expressions, and head
-              - SOLID FLAT BACKGROUND - Plain solid color background ONLY (white, light gray, or black). NO patterns, NO gradients, NO environmental elements, NO scenery, NO objects, NO shadows on background
-              - Consistent character design across all 9 expressions
-              - 3x3 grid composition
-
-              Negative Prompt: ${negativePrompt}${styleNegative}, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, scenery, objects, shadows, textured background
-              `;
-
-              // Use user-configured model priority for image generation
-              const userPriority = getUserPriority('image');
-              const initialModel = userPriority[0] || getDefaultModel('image');
-
-              console.log('[GENERATE_EXPRESSION] Using model priority:', userPriority);
-
-              const exprImages = await generateImageWithFallback(
-                  exprPrompt,
-                  initialModel,
-                  [],
-                  { aspectRatio: '1:1', count: 1 },
-                  { nodeId: nodeId, nodeType: node.type }
-              );
-
-              console.log('[GENERATE_EXPRESSION] Image generation complete:', {
-                  charName,
-                  imageCount: exprImages?.length || 0,
-                  firstImageLength: exprImages?.[0]?.length || 0
-              });
-
-              if (!exprImages || exprImages.length === 0) {
-                  throw new Error('表情图生成失败：API未返回图片数据');
-              }
-
-              // Update character with expression sheet - use the local updatedGenerated array
-              const fIdx = updatedGenerated.findIndex(c => c.name === charName);
-              if (fIdx >= 0) {
-                  // CRITICAL: Explicitly set all generating states to false
-                  const currentChar = updatedGenerated[fIdx];
-                  updatedGenerated[fIdx] = {
-                      ...currentChar,
-                      expressionSheet: exprImages[0],
-                      isGeneratingExpression: false,
-                      isGeneratingThreeView: false // Also ensure this is false
-                  };
-                  console.log('[GENERATE_EXPRESSION] Updating character with expression sheet:', {
-                      name: updatedGenerated[fIdx].name,
-                      hasExpression: !!updatedGenerated[fIdx].expressionSheet,
-                      hasThreeView: !!updatedGenerated[fIdx].threeViewSheet,
-                      isGeneratingExpression: updatedGenerated[fIdx].isGeneratingExpression,
-                      isGeneratingThreeView: updatedGenerated[fIdx].isGeneratingThreeView
-                  });
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-          } catch (e: any) {
-              // Use the local updatedGenerated array for error handling
-              const failIdx = updatedGenerated.findIndex(c => c.name === charName);
-              if (failIdx >= 0) {
-                  updatedGenerated[failIdx] = { ...updatedGenerated[failIdx], isGeneratingExpression: false, expressionError: e.message };
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-          }
-      }
-
-      else if (action === 'GENERATE_THREE_VIEW') {
-          // Phase 2B: Generate three-view sheet only
-          let char = generated.find(c => c.name === charName);
-          if (!char) return;
-
-          console.log('[GENERATE_THREE_VIEW] Starting three-view generation:', {
-              charName,
-              hasExpressionSheet: !!char.expressionSheet,
-              isGeneratingExpression: char.isGeneratingExpression,
-              currentThreeView: !!char.threeViewSheet
-          });
-
-          // Mark as generating - IMPORTANT: Get FRESH data from nodesRef to avoid stale state
-          const freshNode = nodesRef.current.find(n => n.id === nodeId);
-          const freshGenerated = freshNode?.data.generatedCharacters || [];
-          let updatedGenerated = [...freshGenerated];
-
-          updatedGenerated = updatedGenerated.map(c => {
-              if (c.name === charName) {
-                  console.log('[GENERATE_THREE_VIEW] Marking as generating, preserving:', {
-                      hasExpressionSheet: !!c.expressionSheet,
-                      isGeneratingExpression: c.isGeneratingExpression
-                  });
-                  return { ...c, isGeneratingThreeView: true };
-              }
-              return c;
-          });
-          handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-
-          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
-          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
-          let stylePrefix = '';
-
-          if (stylePresetNode?.data.stylePrompt) {
-              stylePrefix = stylePresetNode.data.stylePrompt;
-          } else {
-              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
-              stylePrefix = getVisualPromptPrefix(style, genre, setting);
-          }
-
-          // Re-fetch char from updatedGenerated to get latest state
-          const latestChar = updatedGenerated.find(c => c.name === charName);
-          if (!latestChar) return;
-
-          // CRITICAL: Require expression sheet to exist before generating three-view
-          if (!latestChar.expressionSheet) {
-              const error = '请先生成九宫格表情图，再生成三视图。三视图基于九宫格表情图生成。';
-              console.log('[GENERATE_THREE_VIEW] Blocked:', error);
-              alert(error); // User-friendly notification
-
-              // Update UI to show error state
-              const failIdx = updatedGenerated.findIndex(c => c.name === charName);
-              if (failIdx >= 0) {
-                  updatedGenerated[failIdx] = {
-                      ...updatedGenerated[failIdx],
-                      isGeneratingThreeView: false,
-                      threeViewError: error
-                  };
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-              return;
-          }
-
-          console.log('[GENERATE_THREE_VIEW] Starting with expression sheet as reference:', {
-              charName,
-              hasExpressionSheet: !!latestChar.expressionSheet,
-              expressionLength: latestChar.expressionSheet?.length || 0
-          });
-
-          try {
-              const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
-
-              const viewPrompt = `
-              ${stylePrefix}
-
-              CHARACTER THREE-VIEW GENERATION TASK:
-              Generate a character three-view reference sheet (front, side, back views).
-
-              Character Description:
-              ${latestChar.appearance}
-
-              Attributes: ${latestChar.basicStats}
-
-              COMPOSITION:
-              - Create a vertical layout with 3 views: Front View, Side View (profile), Back View
-              - Full body standing pose, neutral expression
-              - SOLID FLAT BACKGROUND - Plain solid color background ONLY (white, light gray, or black). NO patterns, NO gradients, NO environmental elements, NO scenery, NO objects, NO shadows on background, NO floor reflections, NO ground shadows
-              - Each view should clearly show the character from the specified angle
-
-              CRITICAL REQUIREMENTS:
-              1. CONSISTENT CHARACTER DESIGN - All three views must show the SAME character with consistent facial features, hair style, body proportions, and clothing
-              2. NO TEXT, NO LABELS - Pure image only, no "Front View" or "Side View" text labels, no Chinese characters, no English text
-              3. PROPER ANATOMY - Ensure correct body proportions and natural stance for each view angle
-              4. NEUTRAL EXPRESSION - Use a calm, neutral face expression across all views
-              5. CLEAR ALIGNMENT - Front, side, and back views should be vertically aligned and proportionally consistent
-
-              ${latestChar.expressionSheet ? 'REFERENCE IMAGE: Use the expression sheet as visual reference for face and clothing details.' : ''}
-
-              Negative Prompt: ${negativePrompt}, text, labels, writing, letters, watermark, signature, bad anatomy, deformed, low quality, chinese characters, english text, interface elements, stats, info boxes, patterned background, gradient background, scenery, environmental background, shadows on background, textured background, floor, ground, reflection
-              `;
-
-              const inputImages = latestChar.expressionSheet ? [latestChar.expressionSheet] : [];
-
-              // Use user-configured model priority for image generation
-              const userPriority = getUserPriority('image');
-              const initialModel = userPriority[0] || getDefaultModel('image');
-
-              console.log('[GENERATE_THREE_VIEW] Using model priority:', userPriority);
-
-              let viewImages: string[] = [];
-              let hasText = true;
-              let attempt = 0;
-              const MAX_ATTEMPTS = 3;
-
-              while (hasText && attempt < MAX_ATTEMPTS) {
-                  if (attempt > 0) {
-                      const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
-                      viewImages = await generateImageWithFallback(
-                          retryPrompt,
-                          initialModel,
-                          inputImages,
-                          { aspectRatio: '16:9', count: 1 },
-                          { nodeId: nodeId, nodeType: node.type }
-                      );
-                  } else {
-                      viewImages = await generateImageWithFallback(
-                          viewPrompt,
-                          initialModel,
-                          inputImages,
-                          { aspectRatio: '16:9', count: 1 },
-                          { nodeId: nodeId, nodeType: node.type }
-                      );
-                  }
-
-                  if (viewImages.length > 0) {
-                      hasText = await detectTextInImage(viewImages[0]);
-                      if (hasText) {
-                          console.log(`Text detected in generated 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
-                      }
-                  }
-                  attempt++;
-              }
-
-              console.log('[GENERATE_THREE_VIEW] Image generation complete:', {
-                  charName,
-                  imageCount: viewImages?.length || 0,
-                  firstImageLength: viewImages?.[0]?.length || 0,
-                  attempts: attempt
-              });
-
-              // Update character with three-view sheet - use the local updatedGenerated array
-              const fIdx = updatedGenerated.findIndex(c => c.name === charName);
-              if (fIdx >= 0) {
-                  // CRITICAL: Explicitly preserve isGeneratingExpression = false to prevent UI bug
-                  const currentChar = updatedGenerated[fIdx];
-                  updatedGenerated[fIdx] = {
-                      ...currentChar,
-                      threeViewSheet: viewImages[0],
-                      isGeneratingThreeView: false,
-                      isGeneratingExpression: false // Explicitly set to false to prevent "generating" state in UI
-                  };
-                  console.log('[GENERATE_THREE_VIEW] Updating character with three-view sheet:', {
-                      name: updatedGenerated[fIdx].name,
-                      hasThreeView: !!updatedGenerated[fIdx].threeViewSheet,
-                      hasExpressionSheet: !!updatedGenerated[fIdx].expressionSheet,
-                      isGeneratingExpression: updatedGenerated[fIdx].isGeneratingExpression,
-                      isGeneratingThreeView: updatedGenerated[fIdx].isGeneratingThreeView
-                  });
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-          } catch (e: any) {
-              // Use the local updatedGenerated array for error handling
-              const failIdx = updatedGenerated.findIndex(c => c.name === charName);
-              if (failIdx >= 0) {
-                  updatedGenerated[failIdx] = { ...updatedGenerated[failIdx], isGeneratingThreeView: false, threeViewError: e.message };
-              }
-              handleNodeUpdate(nodeId, { generatedCharacters: updatedGenerated });
-          }
-      }
-
-      else if (action === 'GENERATE_SINGLE') {
-          // Generate single character on-demand
-          const configs = node.data.characterConfigs || {};
-          const config = configs[charName] || { method: 'AI_AUTO' };
-
-          // Get upstream context using recursive tracing
-          const recursiveUpstreamTexts = getUpstreamContext(node, nodesRef.current);
-          const context = recursiveUpstreamTexts.join('\n');
-
-          console.log('[GENERATE_SINGLE] Collected upstream context:', {
-              charName,
-              textCount: recursiveUpstreamTexts.length,
-              totalLength: context.length
-          });
-
-          // Extract style preset from inputs (priority: STYLE_PRESET > upstream context)
-          const inputs = node.inputs.map(i => nodesRef.current.find(n => n.id === i)).filter(Boolean) as AppNode[];
-          const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
-          let stylePrompt = '';
-
-          if (stylePresetNode?.data.stylePrompt) {
-              stylePrompt = stylePresetNode.data.stylePrompt;
-          } else {
-              const { style, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
-              stylePrompt = getVisualPromptPrefix(style, genre, setting);
-          }
-
-          // Initialize character in GENERATING state
-          let charProfile = generated.find(c => c.name === charName);
-          if (!charProfile) {
-              charProfile = { id: '', name: charName, status: 'GENERATING' } as any;
-              generated.push(charProfile!);
-          } else {
-              charProfile.status = 'GENERATING';
-          }
-          handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
-
-          try {
-              if (config.method === 'LIBRARY' && config.libraryId) {
-                  // Use library character
-                  const libChar = assetHistory.find(a => a.id === config.libraryId && a.type === 'character');
-                  if (libChar) {
-                      const idx = generated.findIndex(c => c.name === charName);
-                      generated[idx] = { ...libChar.data, id: `char-inst-${Date.now()}-${charName}`, status: 'SUCCESS' };
-                      handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
-                  }
-              } else if (config.method === 'SUPPORTING_ROLE') {
-                  // Generate supporting character profile only (no auto image generation)
-                  const { generateSupportingCharacter } = await import('./services/geminiService');
-
-                  const profile = await generateSupportingCharacter(
-                      charName,
-                      context,
-                      stylePrompt,
-                      node.data.model || getUserDefaultModel('text'),
-                      { nodeId: nodeId, nodeType: node.type }
-                  );
-
-                  const idx = generated.findIndex(c => c.name === charName);
-                  const existingChar = generated[idx];
-                  generated[idx] = {
-                      ...profile,
-                      // Preserve existing image data (expressionSheet, threeViewSheet)
-                      expressionSheet: existingChar?.expressionSheet,
-                      threeViewSheet: existingChar?.threeViewSheet,
-                      status: 'SUCCESS' as const,
-                      roleType: 'supporting',
-                      isGeneratingExpression: false,
-                      isGeneratingThreeView: false
-                  };
-                  console.log('[GENERATE_SINGLE] Supporting character profile generated:', {
-                      name: charName,
-                      hasExpression: !!generated[idx].expressionSheet,
-                      hasThreeView: !!generated[idx].threeViewSheet
-                  });
-                  handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
-
-              } else {
-                  // Generate main character (AI_AUTO or AI_CUSTOM)
-                  const customDesc = config.method === 'AI_CUSTOM' ? config.customPrompt : undefined;
-
-                  const profile = await generateCharacterProfile(
-                      charName,
-                      context,
-                      stylePrompt,
-                      customDesc,
-                      node.data.model || getUserDefaultModel('text'),
-                      { nodeId: nodeId, nodeType: node.type }
-                  );
-
-                  const idx = generated.findIndex(c => c.name === charName);
-                  const existingChar = generated[idx];
-                  generated[idx] = {
-                      ...profile,
-                      // Preserve existing image data
-                      expressionSheet: existingChar?.expressionSheet,
-                      threeViewSheet: existingChar?.threeViewSheet,
-                      status: 'SUCCESS' as const,
-                      roleType: 'main'
-                  };
-                  handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
-              }
-          } catch (e: any) {
-              const idx = generated.findIndex(c => c.name === charName);
-              generated[idx] = { ...generated[idx], status: 'ERROR', error: e.message };
-              handleNodeUpdate(nodeId, { generatedCharacters: [...generated] });
-          }
-      }
+      // Use new character action handler with queue-based state management
+      await handleCharacterActionNew(
+          nodeId,
+          action,
+          charName,
+          node,
+          nodesRef.current,
+          handleNodeUpdate
+      );
   };
 
   // --- Main Action Handler ---
@@ -1670,7 +1069,10 @@ export const App = () => {
                   episodeTitle,
                   episodeContent,
                   estimatedDuration,
-                  visualStyle
+                  visualStyle,
+                  undefined,  // onShotGenerated callback (not used)
+                  getUserDefaultModel('text'),  // 总是使用最新的模型配置
+                  { nodeId: node.id, nodeType: node.type }  // context for API logging
               );
 
               // Update with complete storyboard
@@ -1903,16 +1305,51 @@ export const App = () => {
                       throw new Error('请先生成任务组和提示词');
                   }
 
-                  // TODO: Implement image fusion logic
-                  // For now, just mark as fused
-                  const updatedTaskGroups = taskGroups.map(tg => ({
-                      ...tg,
-                      imageFused: true,
-                      generationStatus: 'image_fused' as const
-                  }));
+                  try {
+                      // 导入图片融合工具
+                      const { fuseMultipleTaskGroups } = await import('./utils/imageFusion');
 
-                  handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
-                  setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
+                      // 过滤出有splitShots的任务组
+                      const taskGroupsToFuse = taskGroups.filter(tg =>
+                          tg.splitShots && tg.splitShots.length > 0
+                      );
+
+                      if (taskGroupsToFuse.length === 0) {
+                          throw new Error('没有可融合的分镜图');
+                      }
+
+                      console.log('[SORA_VIDEO_GENERATOR] Starting image fusion for', taskGroupsToFuse.length, 'task groups');
+
+                      // 执行图片融合
+                      const fusionResults = await fuseMultipleTaskGroups(
+                          taskGroupsToFuse,
+                          (current, total, groupName) => {
+                              console.log(`正在融合 ${current}/${total}: ${groupName}`);
+                          }
+                      );
+
+                      console.log('[SORA_VIDEO_GENERATOR] Fusion completed:', fusionResults.length, 'groups');
+
+                      // 更新任务组数据
+                      const updatedTaskGroups = taskGroups.map(tg => {
+                          const result = fusionResults.find(r => r.groupId === tg.id);
+                          if (result) {
+                              return {
+                                  ...tg,
+                                  referenceImage: result.fusedImage, // 使用referenceImage字段
+                                  imageFused: true,
+                                  generationStatus: 'image_fused' as const
+                              };
+                          }
+                          return tg;
+                      });
+
+                      handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
+                      setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
+                  } catch (error: any) {
+                      console.error('[SORA_VIDEO_GENERATOR] Image fusion failed:', error);
+                      throw new Error(`图片融合失败: ${error.message}`);
+                  }
                   return;
               }
 
@@ -1987,7 +1424,7 @@ export const App = () => {
                               ...tg,
                               generationStatus: result.status === 'completed' ? 'completed' as const : 'failed' as const,
                               progress: result.status === 'completed' ? 100 : 0,
-                              error: result.status === 'error' ? '生成失败' : undefined,
+                              error: result.status === 'error' ? (result.violationReason || '视频生成失败') : undefined,
                               videoMetadata: result.status === 'completed' ? {
                                   duration: parseFloat(result.duration || '0'),
                                   resolution: '1080p',
@@ -2063,7 +1500,7 @@ export const App = () => {
                                   ...tg,
                                   generationStatus: result.status === 'completed' ? 'completed' as const : 'failed' as const,
                                   progress: result.status === 'completed' ? 100 : 0,
-                                  error: result.status === 'error' ? '生成失败' : undefined,
+                                  error: result.status === 'error' ? (result.violationReason || '视频生成失败') : undefined,
                                   videoMetadata: result.status === 'completed' ? {
                                       duration: parseFloat(result.duration || '0'),
                                       resolution: '1080p',
@@ -2385,7 +1822,7 @@ export const App = () => {
                               name,
                               context,
                               stylePrompt,
-                              node.data.model || getUserDefaultModel('text'),
+                              getUserDefaultModel('text'),  // 总是使用最新的模型配置
                               { nodeId: id, nodeType: node.type }
                           );
 
@@ -2423,7 +1860,7 @@ export const App = () => {
                               context,
                               stylePrompt,
                               customDesc,
-                              node.data.model || getUserDefaultModel('text'),
+                              getUserDefaultModel('text'),  // 总是使用最新的模型配置
                               { nodeId: id, nodeType: node.type }
                           );
 
@@ -2544,7 +1981,7 @@ export const App = () => {
                   episodes: node.data.scriptEpisodes,
                   duration: node.data.scriptDuration,
                   visualStyle: node.data.scriptVisualStyle // Pass Visual Style
-              }, refinedInfo, node.data.model || getUserDefaultModel('text')); // 传入精炼信息作为参考和模型
+              }, refinedInfo, getUserDefaultModel('text')); // 传入精炼信息作为参考和模型，总是使用最新配置
               handleNodeUpdate(id, { scriptOutline: outline });
 
           } else if (node.type === NodeType.SCRIPT_EPISODE) {
@@ -2582,7 +2019,7 @@ export const App = () => {
                   planner.data.scriptDuration || 1,
                   currentStyle, // Pass Visual Style
                   node.data.episodeModificationSuggestion, // Pass Modification Suggestion
-                  node.data.model || getUserDefaultModel('text'), // Pass Model
+                  getUserDefaultModel('text'), // 总是使用最新的模型配置
                   previousEpisodes // Pass previous episodes for continuity
               );
 
@@ -2785,7 +2222,7 @@ export const App = () => {
                   const stylePrompt = node.data.storyboardStyle === 'ANIME'
                       ? 'Anime style, Japanese animation, Studio Ghibli style, 2D, Cel shaded, vibrant colors.'
                       : node.data.storyboardStyle === '3D'
-                      ? 'Photorealistic 3D render, highly realistic human characters, lifelike skin textures, natural subsurface scattering, realistic eyes with detailed iris, accurate anatomy, high-fidelity 3D modeling, Unreal Engine 5, MetaHuman, cinematic lighting, volumetric light ray, global illumination, screen space reflections, 8k resolution, photorealistic materials, detailed fabric textures, realistic hair strands, natural skin pores and imperfections, live action quality.'
+                      ? '3D animated character, stylized 3D render, toon shading, cel shading, artistic rendering, non-photorealistic, smooth stylized skin, clean surfaces, vibrant colors, 3D anime aesthetics, 3D animation quality.'
                       : 'Cinematic Movie Still, Photorealistic, 8k, Live Action, highly detailed.';
 
                   const visualPrompt = `
@@ -2837,13 +2274,21 @@ export const App = () => {
                       // Keep the full structured data for detailed prompt generation
                       storyboardContent = JSON.stringify({
                           shots: storyboard.shots.map((shot: any) => ({
-                              visualDescription: shot.visualDescription,
-                              scene: shot.scene,
-                              shotSize: shot.shotSize,
-                              cameraAngle: shot.cameraAngle,
-                              cameraMovement: shot.cameraMovement
+                              shotNumber: shot.shotNumber,
+                              duration: shot.duration,
+                              scene: shot.scene || '',
+                              characters: shot.characters || [],
+                              shotSize: shot.shotSize || '',
+                              cameraAngle: shot.cameraAngle || '',
+                              cameraMovement: shot.cameraMovement || '',
+                              visualDescription: shot.visualDescription || '',
+                              dialogue: shot.dialogue || '无',
+                              visualEffects: shot.visualEffects || '',
+                              audioEffects: shot.audioEffects || '',
+                              startTime: shot.startTime || 0,
+                              endTime: shot.endTime || (shot.startTime || 0) + (shot.duration || 3)
                           }))
-                      });
+                      }, null, 2); // 使用格式化输出，便于调试
                   }
 
                   if (!storyboardContent) {
@@ -2858,16 +2303,28 @@ export const App = () => {
 
                   // Extract shots with full structured data
                   // Try to parse as JSON first (from generateDetailedStoryboard)
-                  const jsonMatch = storyboardContent.match(/\{[\s\S]*"shots"[\s\S]*\}/);
-                  if (jsonMatch) {
-                      try {
-                          const parsed = JSON.parse(jsonMatch[0]);
-                          if (parsed.shots && Array.isArray(parsed.shots)) {
-                              extractedShots = parsed.shots;
-                              console.log('[STORYBOARD_IMAGE] Parsed structured shots:', extractedShots.length);
+                  // 直接尝试解析整个字符串作为JSON
+                  try {
+                      const parsed = JSON.parse(storyboardContent);
+                      if (parsed.shots && Array.isArray(parsed.shots) && parsed.shots.length > 0) {
+                          extractedShots = parsed.shots;
+                          console.log('[STORYBOARD_IMAGE] Parsed structured shots:', extractedShots.length);
+                          console.log('[STORYBOARD_IMAGE] First shot sample:', extractedShots[0]);
+                      }
+                  } catch (e) {
+                      console.warn('[STORYBOARD_IMAGE] Failed to parse JSON as whole, trying regex fallback:', e);
+                      // 如果整体解析失败，尝试提取shots部分
+                      const jsonMatch = storyboardContent.match(/\{[\s\S]*"shots"[\s\S]*\}/);
+                      if (jsonMatch) {
+                          try {
+                              const parsed = JSON.parse(jsonMatch[0]);
+                              if (parsed.shots && Array.isArray(parsed.shots)) {
+                                  extractedShots = parsed.shots;
+                                  console.log('[STORYBOARD_IMAGE] Parsed structured shots via regex:', extractedShots.length);
+                              }
+                          } catch (e2) {
+                              console.warn('[STORYBOARD_IMAGE] Regex fallback also failed, using text parsing');
                           }
-                      } catch (e) {
-                          console.warn('[STORYBOARD_IMAGE] Failed to parse JSON, falling back to text parsing');
                       }
                   }
 
@@ -3628,7 +3085,7 @@ COMPOSITION REQUIREMENTS:
 
               {/* Connections Layer */}
               <svg className="absolute top-0 left-0 w-full h-full overflow-visible pointer-events-none z-0" xmlns="http://www.w3.org/2000/svg" style={{ overflow: 'visible', pointerEvents: 'none', zIndex: 0 }}>
-                  <ConnectionLayer
+                  <MemoizedConnectionLayer
                       nodes={nodes}
                       connections={connections}
                       scale={canvas.scale}
@@ -3646,26 +3103,60 @@ COMPOSITION REQUIREMENTS:
 
               {nodes.map(node => (
               <Node
-                  key={node.id} 
-                  node={node} 
-                  allNodes={nodes}
+                  key={node.id}
+                  node={node}
+                  // 性能优化：使用nodeQuery而不是传递整个nodes数组
+                  nodeQuery={nodeQuery.current}
                   characterLibrary={assetHistory.filter(a => a.type === 'character').map(a => a.data)}
                   onUpdate={handleNodeUpdate} 
                   onAction={handleNodeAction} 
                   onDelete={(id) => deleteNodes([id])} 
                   onExpand={setExpandedMedia} 
                   onCrop={(id, img) => { setCroppingNodeId(id); setImageToCrop(img); }}
-                  onNodeMouseDown={(e, id) => { 
-                      e.stopPropagation(); 
-                      if (e.shiftKey || e.metaKey || e.ctrlKey) { setSelectedNodeIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); } else { setSelectedNodeIds([id]); }
+                  onNodeMouseDown={(e, id) => {
+                      e.stopPropagation();
+                      const isAlreadySelected = selectedNodeIds.includes(id);
+
+                      // 如果按住shift/meta/ctrl键，切换选中状态
+                      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                          setSelectedNodeIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+                      } else if (!isAlreadySelected) {
+                          // 如果点击的节点未被选中，清除其他选中，只选中当前节点
+                          setSelectedNodeIds([id]);
+                      }
+                      // 如果点击的节点已经被选中，保持选中状态不变（支持多选拖拽）
+
                       const n = nodes.find(x => x.id === id);
                       if (n) {
-                          const w = n.width || 420; const h = n.height || getApproxNodeHeight(n); const cx = n.x + w/2; const cy = n.y + 160; 
+                          const w = n.width || 420; const h = n.height || getApproxNodeHeight(n); const cx = n.x + w/2; const cy = n.y + 160;
                           const pGroup = groups.find(g => { return cx > g.x && cx < g.x + g.width && cy > g.y && cy < g.y + g.height; });
                           let siblingNodeIds: string[] = [];
                           if (pGroup) { siblingNodeIds = nodes.filter(other => { if (other.id === id) return false; const b = getNodeBounds(other); const ocx = b.x + b.width/2; const ocy = b.y + b.height/2; return ocx > pGroup.x && ocx < pGroup.x + pGroup.width && ocy > pGroup.y && ocy < pGroup.y + pGroup.height; }).map(s => s.id); }
-                          dragNodeRef.current = { id, startX: n.x, startY: n.y, mouseStartX: e.clientX, mouseStartY: e.clientY, parentGroupId: pGroup?.id, siblingNodeIds, nodeWidth: w, nodeHeight: h };
-                          setDraggingNodeParentGroupId(pGroup?.id || null); setDraggingNodeId(id); 
+
+                          // 记录多选拖拽信息
+                          const currentSelectedIds = selectedNodeIds.includes(id) ? selectedNodeIds : [id];
+                          const isMultiDrag = currentSelectedIds.length > 1;
+                          const selectedNodesStartPos = isMultiDrag
+                              ? nodes.filter(node => currentSelectedIds.includes(node.id))
+                                  .map(node => ({ id: node.id, x: node.x, y: node.y }))
+                              : [];
+
+                          dragNodeRef.current = {
+                              id,
+                              startX: n.x,
+                              startY: n.y,
+                              mouseStartX: e.clientX,
+                              mouseStartY: e.clientY,
+                              parentGroupId: pGroup?.id,
+                              siblingNodeIds,
+                              nodeWidth: w,
+                              nodeHeight: h,
+                              isMultiDrag,
+                              selectedNodeIds: currentSelectedIds,
+                              selectedNodesStartPos
+                          };
+                          setDraggingNodeParentGroupId(pGroup?.id || null);
+                          setDraggingNodeId(id);
                       }
                   }}
                   onPortMouseDown={(e, id, type) => { e.stopPropagation(); setConnectionStart({ id, x: e.clientX, y: e.clientY }); }}
@@ -3732,6 +3223,7 @@ COMPOSITION REQUIREMENTS:
               target={contextMenuTarget}
               nodeData={nodes.find(n => n.id === contextMenu?.id)?.data}
               nodeType={nodes.find(n => n.id === contextMenu?.id)?.type}
+              selectedNodeIds={selectedNodeIds}
               nodeTypes={[
                   NodeType.PROMPT_INPUT,
                   NodeType.IMAGE_GENERATOR,
@@ -3766,6 +3258,46 @@ COMPOSITION REQUIREMENTS:
 
                       case 'delete':
                           deleteNodes([data]);
+                          break;
+
+                      case 'deleteMultiple':
+                          // 删除所有选中的节点
+                          if (Array.isArray(data) && data.length > 0) {
+                              deleteNodes(data);
+                              // 清除选中状态
+                              setSelectedNodeIds([]);
+                          }
+                          break;
+
+                      case 'createGroupFromSelection':
+                          // 从选中的节点创建分组
+                          if (Array.isArray(data) && data.length > 0) {
+                              const selectedNodes = nodes.filter(n => data.includes(n.id));
+                              if (selectedNodes.length > 0) {
+                                  saveHistory();
+
+                                  // 计算分组边界
+                                  const fMinX = Math.min(...selectedNodes.map(n => n.x));
+                                  const fMinY = Math.min(...selectedNodes.map(n => n.y));
+                                  const fMaxX = Math.max(...selectedNodes.map(n => n.x + (n.width || 420)));
+                                  const fMaxY = Math.max(...selectedNodes.map(n => n.y + 320));
+
+                                  // 创建新分组
+                                  const newGroup = {
+                                      id: `g-${Date.now()}`,
+                                      title: '新建分组',
+                                      x: fMinX - 32,
+                                      y: fMinY - 32,
+                                      width: (fMaxX - fMinX) + 64,
+                                      height: (fMaxY - fMinY) + 64
+                                  };
+
+                                  setGroups(prev => [...prev, newGroup]);
+
+                                  // 清除选中状态
+                                  setSelectedNodeIds([]);
+                              }
+                          }
                           break;
 
                       case 'downloadImage':

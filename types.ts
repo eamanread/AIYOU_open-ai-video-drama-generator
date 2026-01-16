@@ -120,6 +120,11 @@ export interface CharacterProfile {
     expressionSheet?: string; // Base64 of 9-grid
     threeViewSheet?: string; // Base64 of 3-view
     rawProfileData?: any; // The full JSON object from LLM
+    // Stored prompts for regeneration
+    expressionPromptZh?: string;
+    expressionPromptEn?: string;
+    threeViewPromptZh?: string;
+    threeViewPromptEn?: string;
     // Status tracking
     status?: 'IDLE' | 'GENERATING' | 'SUCCESS' | 'ERROR';
     error?: string;

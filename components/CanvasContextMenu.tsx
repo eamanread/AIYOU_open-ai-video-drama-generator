@@ -1,6 +1,6 @@
 // components/CanvasContextMenu.tsx
 import React from 'react';
-import { Copy, Trash2, FolderHeart, Unplug, RefreshCw, Download } from 'lucide-react';
+import { Copy, Trash2, FolderHeart, Unplug, RefreshCw, Download, Users, Layers } from 'lucide-react';
 import { NodeType } from '../types';
 import { useLanguage } from '../src/i18n/LanguageContext';
 
@@ -19,6 +19,7 @@ interface CanvasContextMenuProps {
   nodeTypes?: NodeType[];
   nodeData?: any; // 添加节点数据
   nodeType?: NodeType; // 添加节点类型
+  selectedNodeIds?: string[]; // 多选节点ID列表
   onClose: () => void;
   onAction: (action: string, data?: any) => void;
   getNodeIcon: (type: NodeType) => any;
@@ -36,6 +37,7 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
   nodeTypes = [],
   nodeData,
   nodeType,
+  selectedNodeIds = [],
   onClose,
   onAction,
   getNodeIcon,
@@ -55,6 +57,9 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
     nodeData?.storyboardGridImages?.length > 0 || nodeData?.storyboardGridImage
   );
 
+  // 检查是否为多选场景
+  const isMultiSelect = target.type === 'node' && selectedNodeIds.length > 1;
+
   return (
     <div
       className="fixed z-[100] bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 min-w-[160px] animate-in fade-in zoom-in-95 duration-200 origin-top-left"
@@ -64,6 +69,13 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
       {/* 节点右键菜单 */}
       {target.type === 'node' && (
         <>
+          {/* 多选操作提示 */}
+          {isMultiSelect && (
+            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-400 border-b border-white/10 mb-1">
+              已选中 {selectedNodeIds.length} 个节点
+            </div>
+          )}
+
           {/* 下载原图 - 仅分镜图设计节点显示 */}
           {isStoryboardImageWithImage && (
             <button
@@ -71,6 +83,16 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
               onClick={() => handleAction('downloadImage', target.id)}
             >
               <Download size={12} /> 下载原图
+            </button>
+          )}
+
+          {/* 多选操作：创建分组 */}
+          {isMultiSelect && (
+            <button
+              className="w-full text-left px-3 py-2 text-xs font-medium text-purple-400 hover:bg-purple-500/20 rounded-lg flex items-center gap-2 transition-colors"
+              onClick={() => handleAction('createGroupFromSelection', selectedNodeIds)}
+            >
+              <Layers size={12} /> 创建分组
             </button>
           )}
 
@@ -88,12 +110,22 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
             <RefreshCw size={12} /> {t.contextMenu.replaceAsset}
           </button>
 
-          <button
-            className="w-full text-left px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20 rounded-lg flex items-center gap-2 transition-colors mt-1"
-            onClick={() => handleAction('delete', target.id)}
-          >
-            <Trash2 size={12} /> {t.contextMenu.deleteNode}
-          </button>
+          {/* 多选操作：删除所有选中的节点 */}
+          {isMultiSelect ? (
+            <button
+              className="w-full text-left px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20 rounded-lg flex items-center gap-2 transition-colors mt-1"
+              onClick={() => handleAction('deleteMultiple', selectedNodeIds)}
+            >
+              <Users size={12} /> 删除所有选中 ({selectedNodeIds.length})
+            </button>
+          ) : (
+            <button
+              className="w-full text-left px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20 rounded-lg flex items-center gap-2 transition-colors mt-1"
+              onClick={() => handleAction('delete', target.id)}
+            >
+              <Trash2 size={12} /> {t.contextMenu.deleteNode}
+            </button>
+          )}
         </>
       )}
 

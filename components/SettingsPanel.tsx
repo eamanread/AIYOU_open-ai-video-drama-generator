@@ -1,6 +1,6 @@
 // components/SettingsPanel.tsx
 import React, { useState, useEffect } from 'react';
-import { X, Key, CheckCircle, AlertCircle, Eye, EyeOff, Image as ImageIcon, Video, Type, Music, ArrowUp, ArrowDown, RefreshCw, ExternalLink, Wand2, HelpCircle } from 'lucide-react';
+import { X, Key, CheckCircle, AlertCircle, Eye, EyeOff, Image as ImageIcon, Type, Music, ArrowUp, ArrowDown, RefreshCw, ExternalLink, Wand2, HelpCircle } from 'lucide-react';
 import { useLanguage } from '../src/i18n/LanguageContext';
 import {
   ModelCategory,
@@ -9,7 +9,6 @@ import {
   saveUserPriority,
   getUserPriority,
   IMAGE_MODELS,
-  VIDEO_MODELS,
   TEXT_MODELS,
   AUDIO_MODELS
 } from '../services/modelConfig';
@@ -28,19 +27,13 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-// 模型类别配置
+// 模型类别配置（视频生成已移除 - 使用Sora2配置）
 const MODEL_CATEGORIES = {
   image: {
     label: '图片生成模型',
     icon: ImageIcon,
     description: '按效果排序，优先使用高质量模型，自动降级到备用模型',
     models: IMAGE_MODELS
-  },
-  video: {
-    label: '视频生成模型',
-    icon: Video,
-    description: '专业模型优先，快速模型作为备用',
-    models: VIDEO_MODELS
   },
   text: {
     label: '文本生成模型 (LLM)',
@@ -84,10 +77,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const [ossTestUrl, setOssTestUrl] = useState('');
   const [imageLoadError, setImageLoadError] = useState(false);
 
-  // 模型优先级配置
+  // 模型优先级配置（视频生成使用Sora2配置，不在此管理）
   const [modelPriorities, setModelPriorities] = useState<Record<ModelCategory, string[]>>({
     image: [],
-    video: [],
     text: [],
     audio: []
   });
@@ -109,12 +101,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
       setValidationStatus('success');
     }
 
-    // 加载模型优先级配置
-    const categories: ModelCategory[] = ['image', 'video', 'text', 'audio'];
+    // 加载模型优先级配置（视频生成使用Sora2配置）
+    const categories: ModelCategory[] = ['image', 'text', 'audio'];
     const priorities: Record<ModelCategory, string[]> = {} as any;
 
     categories.forEach(category => {
-      priorities[category] = getUserPriority(category);
+      // 获取用户保存的优先级
+      const savedPriority = getUserPriority(category);
+      // 获取当前可用的所有模型
+      const availableModels = getModelsByCategory(category).map(m => m.id);
+
+      // 合并：保留用户保存的优先级顺序，但添加新模型
+      const mergedPriority = [
+        ...savedPriority.filter(id => availableModels.includes(id)), // 保留保存的（如果仍然可用）
+        ...availableModels.filter(id => !savedPriority.includes(id)) // 添加新的
+      ];
+
+      priorities[category] = mergedPriority;
     });
 
     setModelPriorities(priorities);
@@ -493,7 +496,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
                 <button
                   onClick={() => {
-                    const categories: ModelCategory[] = ['image', 'video', 'text', 'audio'];
+                    const categories: ModelCategory[] = ['image', 'text', 'audio'];
                     categories.forEach(cat => resetToDefault(cat));
                   }}
                   className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] text-slate-400 hover:text-white transition-all flex items-center gap-1"

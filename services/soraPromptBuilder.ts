@@ -137,9 +137,13 @@ ${shotsInfo}
     return await logAPICall(
       'buildProfessionalSoraPrompt',
       async () => {
+        // sendChatMessage需要history, newMessage, options, context
+        // 我们传入空的历史数组，将系统提示作为第一条消息
         return await sendChatMessage(
-          systemPrompt + '\n\n' + userPrompt,
-          getUserDefaultModel('text')
+          [],  // 空 history
+          systemPrompt + '\n\n' + userPrompt,  // newMessage
+          {},  // 空 options
+          { nodeId: 'sora-generator', nodeType: 'SORA_VIDEO_GENERATOR' }
         );
       },
       {

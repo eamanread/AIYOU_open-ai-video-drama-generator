@@ -201,7 +201,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                 
                 {/* Role Label */}
                 <div className="flex items-center gap-2 px-1">
-                    {m.role === 'model' && <span className="text-[10px] font-bold text-cyan-500/80 uppercase tracking-wider">SunStudio AI</span>}
+                    {m.role === 'model' && <span className="text-[10px] font-bold text-cyan-500/80 uppercase tracking-wider">AIYOU</span>}
                     {m.role === 'user' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">You</span>}
                 </div>
 

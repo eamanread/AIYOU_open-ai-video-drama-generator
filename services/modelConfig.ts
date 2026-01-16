@@ -225,6 +225,7 @@ export const VIDEO_MODELS: ModelInfo[] = [
 ];
 
 // 文本生成模型（LLM）- 按推理能力排序
+// 参考: https://ai.google.dev/gemini-api/docs/gemini-3
 export const TEXT_MODELS: ModelInfo[] = [
   {
     id: 'gemini-3-pro-preview',
@@ -234,46 +235,22 @@ export const TEXT_MODELS: ModelInfo[] = [
     quality: 10,
     speed: 7,
     cost: 4,
-    capabilities: ['预览版', '新功能', '高级推理', '最强推理', '复杂任务', '长上下文'],
+    capabilities: ['预览版', '新功能', '高级推理', '最强推理', '复杂任务', '长上下文', '100万token输入'],
     description: '最强推理能力，适合复杂创作任务',
     tags: ['preview', 'new-features', 'strongest-reasoning', 'complex-tasks'],
     isDefault: true
   },
   {
-    id: 'gemini-3-flash',
-    name: 'Gemini 3 Flash',
+    id: 'gemini-3-flash-preview',
+    name: 'Gemini 3 Flash Preview',
     category: 'text',
     priority: 2,
     quality: 8,
     speed: 9,
     cost: 7,
-    capabilities: ['快速响应', '轻量任务', '实时交互'],
-    description: '快速文本生成，适合实时对话',
-    tags: ['fast', 'realtime', 'lightweight']
-  },
-  {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    category: 'text',
-    priority: 3,
-    quality: 7,
-    speed: 10,
-    cost: 9,
-    capabilities: ['超快响应', '高并发', '稳定可用'],
-    description: '速度最快的文本模型，高可用性',
-    tags: ['fastest', 'high-availability', 'stable']
-  },
-  {
-    id: 'gemini-2.5-flash-preview',
-    name: 'Gemini 2.5 Flash Preview',
-    category: 'text',
-    priority: 4,
-    quality: 6,
-    speed: 10,
-    cost: 10,
-    capabilities: ['预览版', '实验性'],
-    description: '预览版本，实验性功能',
-    tags: ['preview', 'experimental']
+    capabilities: ['快速响应', '轻量任务', '实时交互', '100万token输入', '免费层级'],
+    description: '快速文本生成，适合实时对话，提供免费层级',
+    tags: ['fast', 'realtime', 'lightweight', 'free-tier']
   }
 ];
 
@@ -414,18 +391,38 @@ export const saveUserPriority = (category: ModelCategory, priority: string[]) =>
 
 /**
  * 从 localStorage 获取用户配置的默认模型
- * 与 App.tsx 中的逻辑保持一致
+ * 优先级：default_${category}_model > 优先级列表第一个 > 系统默认
  */
 export const getUserDefaultModel = (category: ModelCategory): string => {
+  // 1. 先读取明确的默认模型配置
   const localStorageKey = `default_${category}_model`;
   const model = localStorage.getItem(localStorageKey);
 
   if (model) {
+    console.log(`[getUserDefaultModel] Using configured default model for ${category}:`, model);
     return model;
   }
 
-  // 如果没有配置，返回默认值
-  return getDefaultModel(category);
+  // 2. 如果没有，从用户配置的优先级列表获取第一个
+  const priorityKey = `model_priority_${category}`;
+  const priorityStr = localStorage.getItem(priorityKey);
+
+  if (priorityStr) {
+    try {
+      const priority = JSON.parse(priorityStr);
+      if (Array.isArray(priority) && priority.length > 0) {
+        console.log(`[getUserDefaultModel] Using first priority model for ${category}:`, priority[0]);
+        return priority[0];
+      }
+    } catch (e) {
+      console.warn('[getUserDefaultModel] Failed to parse priority:', e);
+    }
+  }
+
+  // 3. 如果都没有，返回系统默认值
+  const defaultModel = getDefaultModel(category);
+  console.log(`[getUserDefaultModel] Using system default model for ${category}:`, defaultModel);
+  return defaultModel;
 };
 
 /**

@@ -4,9 +4,10 @@
  */
 
 import { SoraTaskGroup, SplitStoryboardShot } from '../types';
-import { getSoraApiKey, getSoraModelById } from './soraConfigService';
+import { getSoraApiKey, getSoraModelById, getOSSConfig } from './soraConfigService';
 import { getUserDefaultModel } from './modelConfig';
 import { logAPICall } from './apiLogger';
+import { uploadFileToOSS } from './ossService';
 
 export interface SoraSubmitResult {
   id: string;
@@ -84,7 +85,7 @@ Shot 2:
 duration: 4.0sec
 Scene: [中景跟拍] 人物在街道行走，手持摄影机跟随，背景虚化营造景深效果，侧光增强立体感
 
-请生成优化后的提示词：`;
+请直接输出优化后的提示词，不要添加任何前缀、后缀或说明文字。`;
 
   const userPrompt = `以下是需要优化的分镜信息：
 
@@ -100,7 +101,50 @@ ${shotDescriptions}
       getUserDefaultModel('text')
     );
 
-    return enhancedPrompt;
+    // 清理 AI 回复，去掉不应该出现的前缀和后缀
+    let cleanedPrompt = enhancedPrompt.trim();
+
+    // 去掉常见的前缀
+    const prefixesToRemove = [
+      '好的，',
+      '好的。',
+      '以下是',
+      '这是',
+      '根据要求',
+      '为你生成',
+      '优化后的',
+      '这是优化后的',
+      '以下是优化后的',
+      '好的，以下是',
+      '好的，这是',
+      'Sure,',
+      'Here is',
+      'Certainly,',
+      'I will',
+      'Let me'
+    ];
+
+    for (const prefix of prefixesToRemove) {
+      if (cleanedPrompt.startsWith(prefix)) {
+        cleanedPrompt = cleanedPrompt.substring(prefix.length).trim();
+      }
+    }
+
+    // 确保以 "Shot 1:" 开头（如果是分镜模式）
+    if (!cleanedPrompt.startsWith('Shot 1:')) {
+      // 尝试找到第一个 "Shot 1:" 的位置
+      const shot1Index = cleanedPrompt.indexOf('Shot 1:');
+      if (shot1Index !== -1) {
+        cleanedPrompt = cleanedPrompt.substring(shot1Index).trim();
+      }
+    }
+
+    // 去掉 markdown 代码块标记
+    cleanedPrompt = cleanedPrompt.replace(/```\w*\n?/g, '').trim();
+
+    console.log('[Sora Service] Cleaned prompt, length:', cleanedPrompt.length);
+
+    return cleanedPrompt;
   } catch (error) {
     console.error('[Sora Service] AI prompt enhancement failed, using basic prompt:', error);
     // 如果 AI 生成失败，回退到基础提示词
@@ -204,16 +248,36 @@ export async function checkSoraTaskStatus(
         onProgress(data.progress);
       }
 
+      // 检查是否违规（quality 字段：standard=正常，其他值=违规说明或错误原因）
+      const isCompliant = data.quality === 'standard';
+      const violationReason = isCompliant ? undefined : (data.quality || '内容审核未通过');
+
+      // 处理错误状态（重试6次后仍失败，quality 包含具体错误原因）
+      if (data.status === 'error') {
+        return {
+          taskId: data.id,
+          status: 'error',
+          progress: data.progress || 0,
+          videoUrl: undefined,
+          videoUrlWatermarked: undefined,
+          duration: undefined,
+          quality: data.quality || 'unknown',
+          isCompliant: false,
+          violationReason: violationReason || '视频生成失败，系统重试6次后仍未成功'
+        };
+      }
+
+      // 正常状态处理
       return {
         taskId: data.id,
         status: data.status,
-        progress: data.progress,
+        progress: data.progress || 0,
         videoUrl: data.url,
         videoUrlWatermarked: data.size,
         duration: data.seconds,
-        quality: data.quality,
-        isCompliant: data.quality === 'standard',
-        violationReason: data.quality !== 'standard' ? data.quality : undefined
+        quality: data.quality || 'standard',
+        isCompliant: isCompliant,
+        violationReason: violationReason
       };
     },
     {
@@ -271,13 +335,38 @@ export async function generateSoraVideo(
     if (taskGroup.soraTaskId && taskGroup.generationStatus === 'generating') {
       onProgress?.(`继续轮询任务 ${taskGroup.soraTaskId}...`, taskGroup.progress || 0);
     } else {
-      // 2. 提交新任务
-      onProgress?.('正在提交 Sora 2 任务...', 0);
+      // 2. 准备参考图片 URL（如果是 base64 则上传到 OSS）
+      let referenceImageUrl = taskGroup.referenceImage;
+
+      if (referenceImageUrl && referenceImageUrl.startsWith('data:')) {
+        // Base64 格式，需要上传到 OSS
+        onProgress?.('正在上传参考图片到 OSS...', 5);
+
+        const ossConfig = getOSSConfig();
+        if (!ossConfig) {
+          throw new Error('图生视频需要配置 OSS，请先在设置中配置阿里云 OSS');
+        }
+
+        try {
+          const fileName = `sora-reference-${taskGroup.id}-${Date.now()}.png`;
+          referenceImageUrl = await uploadFileToOSS(referenceImageUrl, fileName, ossConfig);
+          console.log('[Sora Service] Reference image uploaded to OSS:', referenceImageUrl);
+
+          // 更新任务组的 referenceImage 为 OSS URL
+          taskGroup.referenceImage = referenceImageUrl;
+        } catch (error: any) {
+          console.error('[Sora Service] Failed to upload reference image:', error);
+          throw new Error(`参考图片上传失败: ${error.message}`);
+        }
+      }
+
+      // 3. 提交新任务
+      onProgress?.('正在提交 Sora 2 任务...', 10);
 
       const submitResult = await submitSoraTask(
         taskGroup.soraPrompt,
         taskGroup.soraModelId || 'sora-2-yijia',
-        taskGroup.referenceImage,
+        referenceImageUrl,
         true,
         context
       );

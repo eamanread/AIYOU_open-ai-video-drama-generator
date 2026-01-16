@@ -267,7 +267,15 @@ const CHARACTER_PROFILE_INSTRUCTION = `
 **内容要求：**
 1. 内容必须丰富、具体，具有画面感。
 2. 必须严格遵守传入的【Visual Style Context】视觉风格设定。
-3. "appearancePrompt" 字段必须包含具体的视觉风格关键词（如"Anime", "Photorealistic"等），并且描述清晰，可以直接用于文生图模型。
+3. "appearancePrompt" 字段必须包含具体的视觉风格关键词，并且描述清晰，可以直接用于文生图模型。
+
+**3D动画风格特别要求（当 Visual Style 为 3D 时）：**
+- 必须使用：3d animated character, stylized rendering
+- 皮肤描述：smooth stylized skin, clean surfaces, no skin texture, no pores, no wrinkles
+- 着色风格：toon shading, cel shading, artistic rendering, non-photorealistic
+- 严格禁止：realistic skin texture, skin details, photorealistic, photo, photography, hyperrealistic
+- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style
+
 4. 如果上下文没有提供足够信息，请根据角色定位进行合理的**AI自动补全**，使其丰满。
 `;
 
@@ -290,6 +298,13 @@ const SUPPORTING_CHARACTER_INSTRUCTION = `
 2. 必须严格遵守传入的【Visual Style Context】视觉风格设定。
 3. "appearancePrompt" 字段必须包含具体的视觉风格关键词，描述清晰。
 4. 配角不需要详细的性格、动机、关系等信息。
+
+**3D动画风格特别要求（当 Visual Style 为 3D 时）：**
+- 必须使用：3d animated character, stylized rendering
+- 皮肤描述：smooth stylized skin, clean surfaces, no skin texture, no pores
+- 着色风格：toon shading, cel shading, artistic rendering, non-photorealistic
+- 严格禁止：realistic skin texture, skin details, photorealistic, photo, photography
+- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style
 `;
 
 const DRAMA_ANALYZER_INSTRUCTION = `
@@ -320,7 +335,7 @@ const DRAMA_ANALYZER_INSTRUCTION = `
 
 // ... (Other Instructions UNCHANGED) ...
 const SYSTEM_INSTRUCTION = `
-You are SunStudio AI, an expert multimedia creative assistant.
+You are AIYOU, an expert multimedia creative assistant.
 Your goal is to assist users in generating images, videos, audio, and scripts.
 Always be concise, professional, and helpful.
 When the user asks for creative ideas, provide vivid, detailed descriptions suitable for generative AI prompts.
@@ -1263,12 +1278,51 @@ export const generateDetailedStoryboard = async (
             console.log('[generateDetailedStoryboard] Starting generation with:', { episodeTitle, totalDuration, visualStyle });
 
             const ai = getClient();
-            const prompt = `
-    Episode Title: ${episodeTitle}
-    Episode Content: ${episodeContent}
-    Total Duration: ${totalDuration} seconds
-    Visual Style: ${visualStyle}
-    `;
+
+            // 计算所需分镜数量
+            const minShots = Math.floor(totalDuration / 3);  // 最低：按3秒/镜
+            const recommendedShots = Math.floor(totalDuration / 2.5);  // 推荐：按2.5秒/镜
+            const maxShots = totalDuration;  // 最多：按1秒/镜
+
+            console.log(`[generateDetailedStoryboard] 📊 分镜数量要求：最少 ${minShots} 个，推荐 ${recommendedShots} 个`);
+
+            const prompt = `🎯 CRITICAL TASK - 必须满足时长要求
+
+【剧集信息】
+Title: ${episodeTitle}
+Content: ${episodeContent}
+Duration: ${totalDuration} seconds
+Style: ${visualStyle}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 绝对要求（ABSOLUTE REQUIREMENTS）：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣ 分镜数量强制要求：
+   ✅ MUST生成至少 ${minShots} 个分镜
+   ✅ 推荐生成 ${recommendedShots} 个分镜
+   ✅ 当前你的任务是生成 ${totalDuration} 秒的视频分镜
+
+2️⃣ 时长总和强制要求：
+   ✅ 所有分镜的duration总和 ≥ ${totalDuration} 秒
+   ✅ 绝对不能少于 ${totalDuration} 秒（这是底线）
+   ✅ 每个分镜时长范围：1-4秒
+
+3️⃣ 计算方法：
+   • 如果生成 ${minShots} 个分镜，每个平均 3秒 → 总计 ${minShots * 3}秒 ✅
+   • 如果生成 ${recommendedShots} 个分镜，每个平均 2.5秒 → 总计 ${Math.round(recommendedShots * 2.5)}秒 ✅
+   • 如果生成 ${maxShots} 个分镜，每个平均 1秒 → 总计 ${maxShots}秒 ✅
+
+4️⃣ 错误示例（必须避免）：
+   ❌ 只生成 20 个分镜 → 总计最多 80秒 < ${totalDuration}秒 → 失败
+   ❌ 只生成 ${minShots - 5} 个分镜 → 总计最多 ${(minShots - 5) * 4}秒 < ${totalDuration}秒 → 失败
+   ✅ 生成 ${minShots} 个分镜 → 总计 ${minShots * 3}秒 ≥ ${totalDuration}秒 → 成功
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+输出JSON数组，包含至少 ${minShots} 个分镜对象。`;
+
+            console.log(`[generateDetailedStoryboard] 📝 Prompt准备完成，要求生成 ${minShots}-${recommendedShots} 个分镜`);
 
             const response = await ai.models.generateContent({
                 model: effectiveModel,
@@ -1348,62 +1402,37 @@ export const generateDetailedStoryboard = async (
                 console.log('[generateDetailedStoryboard] 时长违规:', invalidDurationCount, '处');
                 console.log('[generateDetailedStoryboard] ========================');
 
-                // ⚠️ 关键检查：时长是否不足
+                // ⚠️ 时长检查（仅警告，不阻止生成）
                 const durationDiff = actualTotalDuration - totalDuration;
 
                 if (durationDiff < 0) {
                     const shortageSeconds = Math.abs(durationDiff);
                     const shortagePercent = (shortageSeconds / totalDuration) * 100;
 
-                    console.error(`[generateDetailedStoryboard] ❌ 时长不足！`);
-                    console.error(`[generateDetailedStoryboard] 目标时长: ${totalDuration}秒`);
-                    console.error(`[generateDetailedStoryboard] 实际时长: ${actualTotalDuration}秒`);
-                    console.error(`[generateDetailedStoryboard] 缺少: ${shortageSeconds}秒 (${shortagePercent.toFixed(1)}%)`);
-                    console.error(`[generateDetailedStoryboard] 建议: 需要再添加 ${Math.ceil(shortageSeconds / 2)} 个分镜（按平均2秒计算）`);
+                    console.warn(`[generateDetailedStoryboard] ⚠️ 时长不足`);
+                    console.warn(`[generateDetailedStoryboard] 目标: ${totalDuration}秒，实际: ${actualTotalDuration}秒，缺少: ${shortageSeconds}秒 (${shortagePercent.toFixed(1)}%)`);
 
-                    // 如果缺少超过10%，这是一个严重问题
-                    if (shortagePercent > 10) {
-                        throw new Error(
-                            `分镜总时长严重不足：缺少 ${shortageSeconds} 秒 (${shortagePercent.toFixed(1)}%)。` +
-                            `目标时长 ${totalDuration} 秒，实际生成 ${actualTotalDuration} 秒。` +
-                            `请重新生成或增加更多分镜。`
-                        );
-                    }
-
-                    // 如果缺少5-10%，这是一个警告但仍可接受
-                    if (shortagePercent > 5) {
-                        console.warn(`[generateDetailedStoryboard] ⚠️ 警告: 时长缺少 ${shortagePercent.toFixed(1)}%，建议补充分镜`);
-                    }
+                    const minRequired = Math.floor(totalDuration / 3);
+                    const recommended = Math.floor(totalDuration / 2.5);
+                    console.warn(`[generateDetailedStoryboard] 当前: ${shots.length} 个分镜，建议: ${recommended} 个`);
                 } else if (durationDiff > 5) {
-                    // 时长超出超过5秒
-                    console.warn(`[generateDetailedStoryboard] ⚠️ 时长超出 ${durationDiff} 秒，这在可接受范围内`);
+                    console.warn(`[generateDetailedStoryboard] ⚠️ 时长超出 ${durationDiff} 秒`);
                 } else {
                     console.log(`[generateDetailedStoryboard] ✅ 时长符合要求 (${actualTotalDuration}/${totalDuration}秒)`);
                 }
 
-                // Validate shot count is within expected range
-                // 最低分镜数量要求：按平均3秒/镜计算
+                // 分镜数量检查（仅警告，不阻止生成）
                 const minExpectedShots = Math.floor(totalDuration / 3);
-                // 推荐分镜数量：按平均2.5秒/镜计算
                 const recommendedShots = Math.floor(totalDuration / 2.5);
-                const maxExpectedShots = totalDuration; // Minimum 1s per shot
+                const maxExpectedShots = totalDuration;
 
                 console.log(`[generateDetailedStoryboard] 分镜数量要求:`);
-                console.log(`[generateDetailedStoryboard] - 最低要求: ${minExpectedShots} 个（平均3秒/镜）`);
-                console.log(`[generateDetailedStoryboard] - 推荐数量: ${recommendedShots} 个（平均2.5秒/镜）`);
-                console.log(`[generateDetailedStoryboard] - 实际生成: ${shots.length} 个`);
-                console.log(`[generateDetailedStoryboard] - 最大数量: ${maxExpectedShots} 个（平均1秒/镜）`);
+                console.log(`[generateDetailedStoryboard] - 最低: ${minExpectedShots} 个，推荐: ${recommendedShots} 个，实际: ${shots.length} 个`);
 
                 if (shots.length < minExpectedShots) {
-                    console.error(`[generateDetailedStoryboard] ❌ 分镜数量严重不足！最少需要 ${minExpectedShots} 个，实际只有 ${shots.length} 个`);
-                    throw new Error(
-                        `分镜数量严重不足：目标 ${totalDuration} 秒至少需要 ${minExpectedShots} 个分镜，` +
-                        `但只生成了 ${shots.length} 个。请重新生成。`
-                    );
-                } else if (shots.length < recommendedShots) {
-                    console.warn(`[generateDetailedStoryboard] ⚠️ 分镜数量偏少，建议 ${recommendedShots} 个，当前 ${shots.length} 个`);
+                    console.warn(`[generateDetailedStoryboard] ⚠️ 分镜数量偏少（${shots.length}/${minExpectedShots}），但仍可使用`);
                 } else if (shots.length > maxExpectedShots) {
-                    console.warn(`[generateDetailedStoryboard] ⚠️ 分镜数量过多，最多 ${maxExpectedShots} 个，当前 ${shots.length} 个`);
+                    console.warn(`[generateDetailedStoryboard] ⚠️ 分镜数量较多（${shots.length}/${maxExpectedShots}）`);
                 } else {
                     console.log(`[generateDetailedStoryboard] ✅ 分镜数量符合预期`);
                 }
@@ -1411,7 +1440,11 @@ export const generateDetailedStoryboard = async (
                 return shots;
             } catch (e) {
                 console.error("[generateDetailedStoryboard] Error:", e);
-                throw new Error("分镜生成格式错误，请重试");
+                // 保留原始错误信息，不要统一包装
+                if (e instanceof Error) {
+                    throw e;
+                }
+                throw new Error("分镜生成失败，请重试");
             }
         },
         {
@@ -1932,8 +1965,45 @@ export const analyzeDrama = async (
             });
 
             try {
-                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
-                const raw = JSON.parse(text);
+                let text = response.text?.trim() || "{}";
+
+                // 尝试多种方式提取JSON
+                let raw: any = null;
+
+                // 方法1: 直接解析
+                try {
+                    raw = JSON.parse(text);
+                } catch (e1) {
+                    console.warn('[analyzeDrama] Direct JSON parse failed, trying to extract...');
+
+                    // 方法2: 移除markdown代码块标记
+                    text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    try {
+                        raw = JSON.parse(text);
+                    } catch (e2) {
+                        console.warn('[analyzeDrama] After removing markdown failed, trying regex...');
+
+                        // 方法3: 使用正则表达式提取JSON对象
+                        const jsonMatch = text.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            try {
+                                raw = JSON.parse(jsonMatch[0]);
+                            } catch (e3) {
+                                console.error('[analyzeDrama] All JSON parsing methods failed');
+                                console.error('[analyzeDrama] Response text preview:', text.substring(0, 500));
+                                throw new Error(
+                                    `无法解析AI返回的JSON数据。\n` +
+                                    `错误: ${e3 instanceof Error ? e3.message : '未知错误'}\n\n` +
+                                    `💡 建议:\n` +
+                                    `1. 重新尝试分析\n` +
+                                    `2. 或切换到其他模型`
+                                );
+                            }
+                        } else {
+                            throw new Error('AI返回的内容中未找到有效的JSON格式');
+                        }
+                    }
+                }
 
                 return {
                     dramaName: raw.dramaName || dramaName,
@@ -1947,7 +2017,11 @@ export const analyzeDrama = async (
                     artStyle: raw.artStyle || ''
                 };
             } catch (e) {
-                console.error("Drama analysis failed:", e);
+                console.error("[analyzeDrama] Error:", e);
+                // 保留原始错误信息
+                if (e instanceof Error) {
+                    throw e;
+                }
                 throw new Error("剧目分析失败，请重试");
             }
         },
@@ -2175,27 +2249,27 @@ const CHARACTER_STYLE_INSTRUCTION = `你是一位Prompt工程专家，专门生�
 1. **核心风格标签**：
    - REAL: photorealistic portrait, realistic human
    - ANIME: anime character, anime style
-   - 3D: 3d character, 3d human model
+   - 3D: 3d animated character, stylized 3d render
 
 2. **渲染质量**：
    - REAL: 8k uhd, professional portrait photography, high resolution
    - ANIME: masterpiece, best quality, official art, detailed illustration
-   - 3D: high poly model, 8k, ray tracing, detailed textures
+   - 3D: high poly model, 8k, clean 3d render, stylized rendering
 
 3. **人物绘制质量**（抽象）：
    - REAL: detailed facial features, realistic skin texture, professional lighting
    - ANIME: beautiful detailed eyes, detailed character design, clean linework
-   - 3D: subsurface scattering, realistic skin shader, detailed topology
+   - 3D: smooth stylized skin, clean character design, 3D anime aesthetics, stylized features
 
 4. **画面质感**：
    - REAL: shallow depth of field, bokeh background, natural colors
    - ANIME: vibrant colors, cel shading, clean rendering
-   - 3D: PBR materials, realistic hair shader, cloth simulation
+   - 3D: toon shading, vibrant colors, clean surfaces, artistic rendering, non-photorealistic
 
 5. **光照风格**（适用于人物）：
    - REAL: soft portrait lighting, natural light, rim light
    - ANIME: soft shading, anime lighting, gentle highlights
-   - 3D: three-point lighting, studio setup, subsurface scattering
+   - 3D: studio lighting, soft shadows, ambient occlusion, three-point lighting
 
 **禁止包含**：
 ❌ 具体外貌：long hair, blue eyes, fair skin
@@ -2204,6 +2278,8 @@ const CHARACTER_STYLE_INSTRUCTION = `你是一位Prompt工程专家，专门生�
 ❌ 具体表情：smiling, serious, sad
 ❌ 具体年龄/性别：teenage girl, old man
 ❌ 构图角度：portrait, full body, close-up
+❌ 真人皮肤纹理：skin texture, pores, wrinkles, skin details
+❌ 照片质感：photorealistic, hyperrealistic, photo, photography
 
 **输出格式**：
 纯文本，逗号分隔，无换行，无markdown格式`;

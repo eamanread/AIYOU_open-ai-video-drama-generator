@@ -196,3 +196,66 @@ export const ConnectionLayer: React.FC<ConnectionLayerProps> = ({
     </>
   );
 };
+
+/**
+ * 性能优化：使用React.memo防止不必要的重渲染
+ * 只有当关键的props变化时才重新渲染
+ */
+const areConnectionLayerPropsEqual = (
+  prev: ConnectionLayerProps,
+  next: ConnectionLayerProps
+): boolean => {
+  // 检查基本类型
+  if (prev.scale !== next.scale || prev.pan.x !== next.pan.x || prev.pan.y !== next.pan.y) {
+    return false;
+  }
+
+  // 检查connectionStart和mousePos（拖拽时需要实时更新）
+  if (prev.connectionStart?.id !== next.connectionStart?.id ||
+      prev.connectionStart?.x !== next.connectionStart?.x ||
+      prev.connectionStart?.y !== next.connectionStart?.y) {
+    return false;
+  }
+  if (prev.mousePos?.x !== next.mousePos?.x || prev.mousePos?.y !== next.mousePos?.y) {
+    return false;
+  }
+
+  // 检查connections数量
+  if (prev.connections.length !== next.connections.length) {
+    return false;
+  }
+
+  // 检查connections内容
+  for (let i = 0; i < prev.connections.length; i++) {
+    if (prev.connections[i].from !== next.connections[i].from ||
+        prev.connections[i].to !== next.connections[i].to) {
+      return false;
+    }
+  }
+
+  // 检查nodes数量（节点位置变化需要重绘连接线）
+  if (prev.nodes.length !== next.nodes.length) {
+    return false;
+  }
+
+  // 检查可能影响连接线的节点属性
+  for (let i = 0; i < prev.nodes.length; i++) {
+    const prevNode = prev.nodes[i];
+    const nextNode = next.nodes[i];
+    if (prevNode.id !== nextNode.id) return false;
+    if (prevNode.x !== nextNode.x || prevNode.y !== nextNode.y) return false;
+    if (prevNode.width !== nextNode.width) return false;
+    // 只有高度变化时才需要检查（因为连接线的端点依赖于高度）
+    // 我们通过引用比较来判断节点数据是否变化
+    if (prevNode !== nextNode) {
+      // 如果节点引用变化了，需要检查关键属性
+      const prevHeight = prevNode.height || 600;
+      const nextHeight = nextNode.height || 600;
+      if (prevHeight !== nextHeight) return false;
+    }
+  }
+
+  return true;
+};
+
+export const MemoizedConnectionLayer = React.memo(ConnectionLayer, areConnectionLayerPropsEqual);

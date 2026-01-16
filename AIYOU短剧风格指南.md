@@ -39,8 +39,8 @@
 
 **负面避免**：
 ```
-anime, cartoon, painting, illustration, 3d render, cgi,
-artificial, fake, low quality, blurry
+anime, 2D animation, 3D animation, 3D render, cgi,
+painting, illustration, artificial, fake, low quality, blurry
 ```
 
 ---
@@ -125,41 +125,47 @@ low quality, blurry, monochrome
 
 ---
 
-### 1.3 3D漫剧 (3D - 三维渲染风格)
+### 1.3 3D漫剧 (3D - 三维动画风格)
 
-**定义**：使用3D建模和渲染技术制作的动画短剧
+**定义**：使用3D建模和渲染技术制作的动画短剧，强调艺术化、风格化的视觉效果，非写实真人风格
 
 **技术特征**：
-- 风格标签：`3d render`, `octane render`, `unreal engine`
+- 风格标签：`3d animated character`, `stylized 3d render`
 - 渲染引擎：Octane, Unreal Engine 5, Blender Cycles
-- 材质系统：PBR materials, realistic shader
-- 光照技术：ray tracing, global illumination, HDRI lighting
-- 质量参数：8k resolution, high poly model
+- 材质系统：stylized materials, toon shading, cel shading
+- 光照技术：studio lighting, ambient occlusion, soft shadows
+- 质量参数：8k resolution, high poly model, clean rendering
 
 **细分风格**：
 
-#### 1.3.1 写实3D（次世代游戏风格）
+#### 1.3.1 动画3D（通用动画风格）
 ```
 特点：
-- 高精度模型（high poly, detailed topology）
-- 真实材质（PBR workflow, 4K textures）
-- 物理光照（physically based lighting）
-- 真实毛发/布料（hair simulation, cloth physics）
+- 风格化模型（stylized character, smooth surfaces）
+- 光滑皮肤（stylized skin, no skin texture）
+- 卡通着色（toon shading, cel shading）
+- 艺术渲染（artistic rendering, non-photorealistic）
 
 关键词：
-photorealistic 3d, hyperrealistic 3d render,
-unreal engine 5, nanite, lumen,
-subsurface scattering, realistic skin shader,
-detailed textures, normal maps, specular maps
+3d animated character, stylized 3d render,
+toon shading,
+smooth stylized skin, clean surfaces,
+vibrant colors, artistic rendering,
+non-photorealistic, 3D anime aesthetics
+
+禁止：
+photorealistic, realistic skin texture,
+subsurface scattering, skin details,
+photo, photography, hyperrealistic
 
 适合：
-- 科幻题材
-- 现代战争
-- 超级英雄
-- 机甲战斗
+- 都市爱情
+- 职场商战
+- 悬疑推理
+- 现代题材（所有类型）
 ```
 
-#### 1.3.2 卡通3D（Pixar/迪士尼风格）
+#### 1.3.2 Pixar/迪士尼风格
 ```
 特点：
 - 夸张比例（stylized proportions）
@@ -169,7 +175,7 @@ detailed textures, normal maps, specular maps
 - 卡通渲染（toon shading, cel shading）
 
 关键词：
-pixar style, disney style, cartoon 3d,
+pixar style, disney style, 3D anime,
 stylized 3d, cute character design,
 colorful, family-friendly, toon render
 
@@ -202,16 +208,18 @@ retro style, indie game art
 **3D渲染质量要求**：
 ```
 正面：
+3d animated character, stylized rendering,
+toon shading, cel shading,
 octane render, unreal engine, blender,
-ray tracing, global illumination,
-PBR materials, 8k resolution,
-detailed textures, subsurface scattering,
-ambient occlusion, volumetric fog
+studio lighting, ambient occlusion,
+vibrant colors, clean surfaces,
+artistic style, non-photorealistic
 
 负面：
-2d, flat, anime, photo, painting,
-low poly (除非刻意使用), low quality,
-blurry, bad topology, artifacts
+photorealistic, realistic skin texture,
+skin details, pores, wrinkles,
+hyperrealistic, photo, photography,
+subsurface scattering, realistic shader
 ```
 
 ---
@@ -464,36 +472,39 @@ stylized characters, family-friendly,
 octane render, vibrant lighting
 ```
 
-#### 赛博朋克 (REAL或3D写实)
+#### 赛博朋克 (3D动画风格)
 ```
-视觉风格：REAL写实或3D次世代
+视觉风格：3D动画渲染
 色调：冷色调 + 霓虹灯
 光照：neon lights, volumetric fog
 场景：futuristic city, holographic displays
 
 提示词模板：
-cyberpunk style, futuristic cityscape,
+cyberpunk style, 3d animated cityscape,
+stylized futuristic city,
 neon lights, holographic elements,
 rainy night, volumetric fog,
-photorealistic or 3d render,
+artistic rendering,
 cinematic sci-fi, high tech atmosphere,
-ray tracing, 8k resolution
+ray tracing, 8k resolution,
+non-photorealistic, vibrant colors
 ```
 
-#### 末日废土 (REAL或3D写实)
+#### 末日废土 (3D动画风格)
 ```
-视觉风格：REAL写实或3D次世代
+视觉风格：3D动画渲染
 色调：沙漠暖色或灰暗冷色
 光照：harsh sunlight or overcast
 场景：ruins, desert, destroyed buildings
 
 提示词模板：
-post-apocalyptic, wasteland,
+post-apocalyptic, stylized 3d render,
 destroyed cityscape, ruins,
 harsh lighting, dusty atmosphere,
-photorealistic, cinematic,
-gritty realistic textures,
-8k uhd, desolate environment
+3d animated style, artistic rendering,
+stylized textures, clean surfaces,
+8k uhd, desolate environment,
+3D anime aesthetics, non-photorealistic
 ```
 
 ---
@@ -548,7 +559,7 @@ high quality, detailed
 场景：colorful environments
 
 提示词模板（3D）：
-pixar style, cartoon 3d,
+pixar style, 3D anime,
 cute character design, colorful,
 funny expressions, family-friendly,
 bright lighting, cheerful atmosphere
@@ -638,22 +649,24 @@ comic book aesthetic
 
 ### 4.3 3D风格画风分类
 
-#### NPR渲染 (Non-Photorealistic)
+#### NPR渲染 (Non-Photorealistic) - 3D默认风格
 ```
-特点：3D模型，2D渲染效果
+特点：3D模型，风格化渲染效果，非写实
 关键词：
 NPR rendering, toon shading,
 cel-shaded 3d, anime 3d style,
-stylized 3d rendering
+stylized 3d rendering, artistic style,
+non-photorealistic, 3D anime aesthetics
 ```
 
-#### PBR写实渲染
+#### 风格化PBR渲染
 ```
-特点：物理真实，材质精细
+特点：3D模型，风格化材质和光照
 关键词：
-PBR workflow, physically based rendering,
-realistic materials, accurate lighting,
-photorealistic 3d
+stylized PBR workflow, artistic rendering,
+stylized materials, vibrant colors,
+clean surfaces, smooth textures,
+toon shading
 ```
 
 #### 体素风格 (Voxel)
@@ -708,20 +721,23 @@ highly detailed illustration
 
 #### 赛博朋克
 ```
-制作类型：REAL写实或3D写实
-画风：电影级科幻
+制作类型：3D动画渲染
+画风：电影级科幻动画
 色调：冷色调 + 霓虹
 光照：体积光 + 霓虹灯
 场景风格：未来都市
 
 完整提示词：
-cyberpunk style, photorealistic 3d,
+cyberpunk style, 3d animated cityscape,
+stylized futuristic city,
 neon-lit cityscape, rainy night,
 volumetric fog, holographic displays,
 cool tone, dramatic lighting,
 ray tracing, global illumination,
 unreal engine 5, 8k resolution,
-cinematic sci-fi atmosphere
+cinematic sci-fi atmosphere,
+non-photorealistic, vibrant colors,
+3D anime aesthetics
 ```
 
 #### 魔法少女
@@ -828,7 +844,7 @@ detailed textures, cinematic quality
 #### 通用负面标签
 ```
 REAL写实：
-anime, cartoon, painting, illustration,
+anime, 2D animation, 3D animation, painting, illustration,
 3d render, cgi, low quality, blurry,
 out of focus, bad quality, amateur
 
@@ -953,32 +969,31 @@ official art, professional
 ### 案例3：末日求生（3D科幻废土）
 
 **剧集类型**：末日科幻
-**制作类型**：3D写实渲染
+**制作类型**：3D动画渲染
 **色调**：冷灰色调
-**画风**：次世代游戏级
+**画风**：风格化动画
 
 **场景风格提示词**：
 ```
-3d render, photorealistic environment,
+3d animated environment, stylized render,
 post-apocalyptic wasteland,
 destroyed cityscape, ruins,
 overcast sky, dusty atmosphere,
 volumetric fog, dramatic lighting,
-unreal engine 5, nanite, lumen,
+unreal engine 5, ambient occlusion,
 ray tracing, global illumination,
-PBR materials, 8k resolution,
-detailed textures, ambient occlusion,
-cinematic composition, desolate mood
+clean surfaces, artistic rendering,
+cinematic composition, desolate mood,
+non-photorealistic
 ```
 
 **人物风格提示词**：
 ```
-3d character model, photorealistic 3d,
-realistic human, high poly model,
-detailed facial topology,
-subsurface scattering, realistic skin shader,
+3d animated character, stylized 3d render,
+stylized features, smooth surfaces,
+high poly model, clean character design,
 weathered clothing, tactical gear,
-PBR materials, realistic textures,
+stylized materials, vibrant colors,
 studio lighting, three-point lighting,
 octane render, 8k resolution,
 ray tracing, detailed character design
@@ -1196,10 +1211,10 @@ A: 多方面优化：
 
 | 需求 | REAL | ANIME | 3D |
 |------|------|-------|-----|
-| 核心标签 | photorealistic, cinematic | anime style, masterpiece | 3d render, octane |
-| 质量 | 8k uhd, professional | best quality, official art | ray tracing, 8k |
-| 光照 | natural lighting, volumetric | soft lighting, rim light | HDRI, global illumination |
-| 质感 | realistic texture, sharp focus | cel shading, clean lines | PBR materials, detailed |
+| 核心标签 | photorealistic, cinematic | anime style, masterpiece | 3d animated character, stylized 3d render |
+| 质量 | 8k uhd, professional | best quality, official art | ray tracing, 8k, clean rendering |
+| 光照 | natural lighting, volumetric | soft lighting, rim light | studio lighting, ambient occlusion |
+| 质感 | realistic texture, sharp focus | cel shading, clean lines | toon shading, smooth surfaces, non-photorealistic |
 
 ### 题材风格速查
 

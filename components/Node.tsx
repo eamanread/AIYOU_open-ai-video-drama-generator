@@ -2,9 +2,11 @@
 import { AppNode, NodeStatus, NodeType, StoryboardShot, CharacterProfile, SoraModel } from '../types';
 import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCircle, CheckCircle, Plus, Maximize2, Download, MoreHorizontal, Wand2, Scaling, FileSearch, Edit, Loader2, Layers, Trash2, X, Upload, Scissors, Film, MousePointerClick, Crop as CropIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripHorizontal, Link, Copy, Monitor, Music, Pause, Volume2, Mic2, BookOpen, ScrollText, Clapperboard, LayoutGrid, Box, User, Users, Save, RotateCcw, Eye, List, Sparkles, ZoomIn, ZoomOut, Minus, Circle, Square, Maximize, Move, RotateCw, TrendingUp, TrendingDown, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight, Palette, Grid, MoveHorizontal, ArrowUpDown } from 'lucide-react';
 import { VideoModeSelector, SceneDirectorOverlay } from './VideoNodeModules';
+import { PromptEditor } from './PromptEditor';
 import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
 import { getSoraModelById } from '../services/soraConfigService';
 import { IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS, AUDIO_MODELS, getUserDefaultModel } from '../services/modelConfig';
+import { promptManager } from '../services/promptManager';
 
 const IMAGE_ASPECT_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9'];
 const VIDEO_ASPECT_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9'];
@@ -91,17 +93,24 @@ interface NodeProps {
   onInputReorder?: (nodeId: string, newOrder: string[]) => void;
   
   // Character Node Actions
-  onCharacterAction?: (nodeId: string, action: 'DELETE' | 'SAVE' | 'RETRY', charName: string) => void;
+  onCharacterAction?: (nodeId: string, action: 'DELETE' | 'SAVE' | 'RETRY' | 'GENERATE_EXPRESSION' | 'GENERATE_THREE_VIEW', charName: string, customPrompt?: { expressionPrompt?: string; threeViewPrompt?: string }) => void | Promise<void>;
   onViewCharacter?: (character: CharacterProfile) => void;
 
   isDragging?: boolean;
   isGroupDragging?: boolean;
   isSelected?: boolean;
   isResizing?: boolean;
-  isConnecting?: boolean; 
-  
-  allNodes?: AppNode[];
-  characterLibrary?: CharacterProfile[]; 
+  isConnecting?: boolean;
+
+  // 性能优化：使用nodeQuery而不是传递整个nodes数组
+  nodeQuery?: {
+    getNode: (id: string) => AppNode | undefined;
+    getUpstreamNodes: (nodeId: string, nodeType: string) => AppNode[];
+    getFirstUpstreamNode: (nodeId: string, nodeType: string) => AppNode | undefined;
+    hasUpstreamNode: (nodeId: string, nodeType: string) => boolean;
+    getNodesByIds: (ids: string[]) => AppNode[];
+  };
+  characterLibrary?: CharacterProfile[];
 }
 
 const SecureVideo = ({ src, className, autoPlay, muted, loop, onMouseEnter, onMouseLeave, onClick, controls, videoRef, style }: any) => {
@@ -379,7 +388,7 @@ const EpisodeViewer = ({ episodes }: { episodes: { title: string, content: strin
 };
 
 const NodeComponent: React.FC<NodeProps> = ({
-  node, onUpdate, onAction, onDelete, onExpand, onCrop, onNodeMouseDown, onPortMouseDown, onPortMouseUp, onNodeContextMenu, onMediaContextMenu, onResizeMouseDown, inputAssets, onInputReorder, onCharacterAction, onViewCharacter, isDragging, isGroupDragging, isSelected, isResizing, isConnecting, allNodes, characterLibrary
+  node, onUpdate, onAction, onDelete, onExpand, onCrop, onNodeMouseDown, onPortMouseDown, onPortMouseUp, onNodeContextMenu, onMediaContextMenu, onResizeMouseDown, inputAssets, onInputReorder, onCharacterAction, onViewCharacter, isDragging, isGroupDragging, isSelected, isResizing, isConnecting, nodeQuery, characterLibrary
 }) => {
   const isWorking = node.status === NodeStatus.WORKING;
   const [isActionProcessing, setIsActionProcessing] = useState(false);
@@ -467,8 +476,8 @@ const NodeComponent: React.FC<NodeProps> = ({
   // Function to refresh chapters from planner node
   const handleRefreshChapters = useCallback(() => {
       console.log('🔄 刷新章节列表...');
-      if (node.type === NodeType.SCRIPT_EPISODE && allNodes) {
-          const plannerNode = allNodes.find(n => node.inputs.includes(n.id) && n.type === NodeType.SCRIPT_PLANNER);
+      if (node.type === NodeType.SCRIPT_EPISODE && nodeQuery) {
+          const plannerNode = nodeQuery.getFirstUpstreamNode(node.id, NodeType.SCRIPT_PLANNER);
           console.log('📖 找到上游剧本大纲节点:', plannerNode?.id);
           if (plannerNode && plannerNode.data.scriptOutline) {
               console.log('📝 剧本大纲内容长度:', plannerNode.data.scriptOutline.length);
@@ -492,7 +501,7 @@ const NodeComponent: React.FC<NodeProps> = ({
               console.log('⚠️ 未找到剧本大纲节点或大纲内容为空');
           }
       }
-  }, [node.type, node.inputs, node.id, node.data.selectedChapter, allNodes, onUpdate]);
+  }, [node.type, node.inputs, node.id, node.data.selectedChapter, nodeQuery, onUpdate]);
 
   useEffect(() => {
       handleRefreshChapters();
@@ -1455,7 +1464,7 @@ const NodeComponent: React.FC<NodeProps> = ({
       if (node.type === NodeType.STORYBOARD_SPLITTER) {
           const splitShots = node.data.splitShots || [];
           const isSplitting = node.data.isSplitting || false;
-          const connectedStoryboardNodes = allNodes.filter(n => node.inputs.includes(n.id) && n.type === NodeType.STORYBOARD_IMAGE);
+          const connectedStoryboardNodes = nodeQuery ? nodeQuery.getUpstreamNodes(node.id, NodeType.STORYBOARD_IMAGE) : [];
 
           // 过滤掉空的分镜：必须同时有画面描述和拆解图片
           const validShots = splitShots.filter((shot) => {
@@ -1728,7 +1737,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                               </div>
 
                                               <div className="flex items-center gap-2">
-                                                  {!profile && (
+                                                  {!profile && !isProcessing && (
                                                       <select
                                                           className="bg-black/40 border border-white/10 rounded-lg text-[10px] text-slate-300 px-2 py-1 outline-none"
                                                           value={config.method}
@@ -1745,19 +1754,30 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                       </select>
                                                   )}
 
-                                                  {!profile && (
-                                                      <button
-                                                          onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_SINGLE', name); }}
-                                                          className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold rounded transition-all"
-                                                      >
-                                                          <Sparkles size={10} />
-                                                          生成
-                                                      </button>
-                                                  )}
+                                                  {!profile ? (
+                                                      isProcessing ? (
+                                                          <button
+                                                              disabled
+                                                              className="flex items-center gap-1 px-2 py-1 bg-orange-500/10 text-orange-300/50 text-[10px] font-bold rounded cursor-not-allowed"
+                                                          >
+                                                              <Loader2 size={10} className="animate-spin" />
+                                                              生成中
+                                                          </button>
+                                                      ) : (
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_SINGLE', name); }}
+                                                              className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold rounded transition-all"
+                                                          >
+                                                              <Sparkles size={10} />
+                                                              生成
+                                                          </button>
+                                                      )
+                                                  ) : null}
 
                                                   <button
                                                       onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'DELETE', name); }}
-                                                      className="p-1 rounded-full hover:bg-white/10 text-slate-500 hover:text-red-400 transition-colors"
+                                                      disabled={isProcessing}
+                                                      className={`p-1 rounded-full transition-colors ${isProcessing ? 'cursor-not-allowed opacity-50' : 'hover:bg-white/10 text-slate-500 hover:text-red-400'}`}
                                                   >
                                                       <X size={12} />
                                                   </button>
@@ -1765,14 +1785,15 @@ const NodeComponent: React.FC<NodeProps> = ({
                                           </div>
 
                                           {config.method === 'AI_CUSTOM' && !profile && (
-                                              <textarea 
-                                                  className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 outline-none resize-none h-16 custom-scrollbar"
+                                              <textarea
+                                                  className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 outline-none resize-none h-16 custom-scrollbar disabled:opacity-50"
                                                   placeholder="输入外貌、性格等补充描述..."
                                                   value={config.customPrompt || ''}
                                                   onChange={(e) => {
                                                       const newConfigs = { ...configs, [name]: { ...config, customPrompt: e.target.value } };
                                                       onUpdate(node.id, { characterConfigs: newConfigs });
                                                   }}
+                                                  disabled={isProcessing}
                                               />
                                           )}
 
@@ -1839,6 +1860,26 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                       </button>
                                                   </div>
                                               </div>
+                                          )}
+
+                                          {/* Prompt Editor - only show when profile exists and has prompts */}
+                                          {profile && !isProcessing && !isFailed && (
+                                              <PromptEditor
+                                                  nodeId={node.id}
+                                                  charName={name}
+                                                  expressionPromptZh={profile.expressionPromptZh || promptManager.getDefaultPrompts().expressionPrompt.zh}
+                                                  expressionPromptEn={profile.expressionPromptEn || promptManager.getDefaultPrompts().expressionPrompt.en}
+                                                  threeViewPromptZh={profile.threeViewPromptZh || promptManager.getDefaultPrompts().threeViewPrompt.zh}
+                                                  threeViewPromptEn={profile.threeViewPromptEn || promptManager.getDefaultPrompts().threeViewPrompt.en}
+                                                  hasExpressionSheet={!!profile.expressionSheet}
+                                                  hasThreeViewSheet={!!profile.threeViewSheet}
+                                                  onRegenerateExpression={(customPrompt) => {
+                                                      onCharacterAction?.(node.id, 'GENERATE_EXPRESSION', name, { expressionPrompt: customPrompt });
+                                                  }}
+                                                  onRegenerateThreeView={(customPrompt) => {
+                                                      onCharacterAction?.(node.id, 'GENERATE_THREE_VIEW', name, { threeViewPrompt: customPrompt });
+                                                  }}
+                                              />
                                           )}
                                       </div>
                                   );
@@ -2301,22 +2342,75 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                           将当前任务组的 <span className="text-purple-300 font-medium">{tg.splitShots.length}</span> 张分镜图进行拼接并标号，生成一张参考图供 AI 理解镜头顺序和画面内容
                                                       </div>
                                                       {/* Fusion Structure Preview */}
-                                                      <div className="flex items-center gap-1 pt-1">
-                                                          {tg.splitShots.slice(0, 6).map((_, idx) => (
-                                                              <div key={idx} className="flex items-center">
-                                                                  <div className="w-6 h-4 bg-purple-500/30 rounded border border-purple-500/30 flex items-center justify-center">
-                                                                      <span className="text-[6px] text-purple-300">{idx + 1}</span>
+                                                      {!tg.imageFused && (
+                                                          <div className="flex items-center gap-1 pt-1">
+                                                              {tg.splitShots.slice(0, 6).map((_, idx) => (
+                                                                  <div key={idx} className="flex items-center">
+                                                                      <div className="w-6 h-4 bg-purple-500/30 rounded border border-purple-500/30 flex items-center justify-center">
+                                                                          <span className="text-[6px] text-purple-300">{idx + 1}</span>
+                                                                      </div>
+                                                                      {idx < Math.min(tg.splitShots.length, 6) - 1 && (
+                                                                          <span className="text-purple-500/40">+</span>
+                                                                      )}
                                                                   </div>
-                                                                  {idx < Math.min(tg.splitShots.length, 6) - 1 && (
-                                                                      <span className="text-purple-500/40">+</span>
-                                                                  )}
+                                                              ))}
+                                                              {tg.splitShots.length > 6 && (
+                                                                  <span className="text-[7px] text-purple-400">+{tg.splitShots.length - 6}</span>
+                                                              )}
+                                                              <span className="text-[7px] text-slate-500">→ 融合图</span>
+                                                          </div>
+                                                      )}
+                                                      {/* Fused Image Display */}
+                                                      {tg.imageFused && tg.referenceImage && (
+                                                          <div className="mt-2 space-y-2">
+                                                              {/* Thumbnail - Collapsed by default */}
+                                                              <div className="relative group rounded overflow-hidden border border-purple-500/30 bg-black/40">
+                                                                  <img
+                                                                      src={tg.referenceImage}
+                                                                      alt={`任务组 ${tg.taskNumber} 融合图`}
+                                                                      className="w-full h-auto object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                                                      onClick={() => onExpand?.(tg.referenceImage)}
+                                                                      style={{ maxHeight: '200px' }}
+                                                                  />
+                                                                  {/* Action Buttons Overlay */}
+                                                                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                      <button
+                                                                          onClick={(e) => {
+                                                                              e.stopPropagation();
+                                                                              onExpand?.(tg.referenceImage);
+                                                                          }}
+                                                                          className="p-1.5 bg-black/60 rounded hover:bg-black/80 transition-colors"
+                                                                          title="查看大图"
+                                                                      >
+                                                                          <Maximize2 size={12} className="text-white" />
+                                                                      </button>
+                                                                      <button
+                                                                          onClick={(e) => {
+                                                                              e.stopPropagation();
+                                                                              // Download image
+                                                                              const link = document.createElement('a');
+                                                                              link.href = tg.referenceImage;
+                                                                              link.download = `sora-reference-${node.id}-${tg.id}.png`;
+                                                                              link.click();
+                                                                          }}
+                                                                          className="p-1.5 bg-black/60 rounded hover:bg-black/80 transition-colors"
+                                                                          title="下载融合图"
+                                                                      >
+                                                                          <Download size={12} className="text-white" />
+                                                                      </button>
+                                                                  </div>
+                                                                  {/* Expand Hint */}
+                                                                  <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 rounded text-[8px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                      点击查看大图
+                                                                  </div>
                                                               </div>
-                                                          ))}
-                                                          {tg.splitShots.length > 6 && (
-                                                              <span className="text-[7px] text-purple-400">+{tg.splitShots.length - 6}</span>
-                                                          )}
-                                                          <span className="text-[7px] text-slate-500">→ 融合图</span>
-                                                      </div>
+                                                              {/* Info */}
+                                                              <div className="flex items-center justify-between text-[8px] text-slate-400">
+                                                                  <span>共 {tg.splitShots.length} 个镜头已融合</span>
+                                                                  <span className="text-purple-400">点击缩略图查看完整</span>
+                                                              </div>
+                                                          </div>
+                                                      )}
                                                   </div>
                                               )}
                                           </div>
@@ -2344,10 +2438,23 @@ const NodeComponent: React.FC<NodeProps> = ({
                                               </div>
 
                                               {tg.soraPrompt ? (
-                                                  <div className="p-2 bg-black/30 rounded border border-white/5 max-h-40 overflow-y-auto custom-scrollbar">
-                                                      <pre className="text-[9px] text-slate-300 font-mono whitespace-pre-wrap break-words">
-                                                          {tg.soraPrompt}
-                                                      </pre>
+                                                  <div className="px-2 pb-2">
+                                                      <textarea
+                                                          className="w-full p-2 bg-black/30 rounded border border-white/10 text-[9px] text-slate-300 font-mono resize-y min-h-[300px] max-h-[500px] overflow-y-auto custom-scrollbar focus:outline-none focus:border-cyan-500/30"
+                                                          defaultValue={tg.soraPrompt}
+                                                          onChange={(e) => {
+                                                              const updatedTaskGroups = [...node.data.taskGroups];
+                                                              const tgIndex = updatedTaskGroups.findIndex(t => t.id === tg.id);
+                                                              if (tgIndex !== -1) {
+                                                                  updatedTaskGroups[tgIndex].soraPrompt = e.target.value;
+                                                                  onUpdate(node.id, { taskGroups: updatedTaskGroups });
+                                                              }
+                                                          }}
+                                                          onMouseDown={(e) => e.stopPropagation()}
+                                                          onTouchStart={(e) => e.stopPropagation()}
+                                                          onPointerDown={(e) => e.stopPropagation()}
+                                                          placeholder="Sora 提示词..."
+                                                      />
                                                   </div>
                                               ) : (
                                                   <div className="p-2 bg-black/20 rounded border border-dashed border-white/10 text-center">
@@ -2426,6 +2533,11 @@ const NodeComponent: React.FC<NodeProps> = ({
                               muted
                               autoPlay
                           />
+                      ) : violationReason || node.data.error ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-red-400 bg-black/40 p-6 text-center">
+                              <AlertCircle className="text-red-500 mb-1" size={32} />
+                              <span className="text-xs font-medium text-red-200">{violationReason || node.data.error}</span>
+                          </div>
                       ) : (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-600">
                               <Video size={32} className="opacity-50" />
@@ -2462,7 +2574,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                       {node.status === NodeStatus.ERROR && (
                           <div className="absolute inset-0 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
                               <AlertCircle className="text-red-500 mb-2" />
-                              <span className="text-xs text-red-200">{node.data.error}</span>
+                              <span className="text-xs text-red-200">{node.data.error || violationReason}</span>
                           </div>
                       )}
                   </div>
@@ -2844,9 +2956,17 @@ const NodeComponent: React.FC<NodeProps> = ({
                      {node.data.soraPrompt && (
                          <div className="flex flex-col gap-2">
                              <label className="text-[10px] text-slate-400">Sora 提示词:</label>
-                             <div className="p-2 bg-black/30 rounded-lg text-[9px] text-slate-300 font-mono whitespace-pre-wrap break-all max-h-24 overflow-y-auto custom-scrollbar">
-                                 {node.data.soraPrompt}
-                             </div>
+                             <textarea
+                                 className="w-full p-2 bg-black/30 rounded border border-white/10 text-[9px] text-slate-300 font-mono resize-y min-h-[400px] max-h-[600px] overflow-y-auto custom-scrollbar focus:outline-none focus:border-cyan-500/30"
+                                 defaultValue={node.data.soraPrompt}
+                                 onChange={(e) => {
+                                     onUpdate(node.id, { soraPrompt: e.target.value });
+                                 }}
+                                 onMouseDown={(e) => e.stopPropagation()}
+                                 onTouchStart={(e) => e.stopPropagation()}
+                                 onPointerDown={(e) => e.stopPropagation()}
+                                 placeholder="Sora 提示词..."
+                             />
                          </div>
                      )}
 
@@ -2866,7 +2986,7 @@ const NodeComponent: React.FC<NodeProps> = ({
          const splitShots = node.data.splitShots || [];
          const selectedSourceNodes = node.data.selectedSourceNodes || node.inputs || [];
          const isSplitting = node.data.isSplitting || false;
-         const connectedStoryboardNodes = allNodes.filter(n => node.inputs.includes(n.id) && n.type === NodeType.STORYBOARD_IMAGE);
+         const connectedStoryboardNodes = nodeQuery ? nodeQuery.getUpstreamNodes(node.id, NodeType.STORYBOARD_IMAGE) : [];
 
          // Handler: Toggle source node selection
          const handleToggleSourceNode = (nodeId: string) => {
@@ -2889,7 +3009,7 @@ const NodeComponent: React.FC<NodeProps> = ({
          // Handler: Start splitting
          const handleStartSplit = async () => {
              if (selectedSourceNodes.length === 0) return;
-             const nodesToSplit = allNodes.filter(n => selectedSourceNodes.includes(n.id));
+             const nodesToSplit = nodeQuery ? nodeQuery.getNodesByIds(selectedSourceNodes) : [];
              onUpdate(node.id, { isSplitting: true });
 
              try {
@@ -3161,7 +3281,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                     <span>已连接 {node.inputs.length} 个节点</span>
                                 </div>
                                 {/* Show if character node is connected */}
-                                {allNodes?.find(n => node.inputs.includes(n.id) && n.type === NodeType.CHARACTER_NODE) && (
+                                {nodeQuery?.hasUpstreamNode(node.id, NodeType.CHARACTER_NODE) && (
                                     <div className="flex items-center gap-2 px-2 py-1 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] text-orange-300">
                                         <User size={10} />
                                         <span>已连接角色设计，将保持角色一致性</span>
@@ -3391,10 +3511,9 @@ const NodeComponent: React.FC<NodeProps> = ({
                         </button>
                     </div>
                 ) : (() => {
-                    const isEpisodeChild = node.type === NodeType.PROMPT_INPUT && allNodes?.some(n => node.inputs.includes(n.id) && n.type === NodeType.SCRIPT_EPISODE);
+                    const isEpisodeChild = node.type === NodeType.PROMPT_INPUT && nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE);
                     if (node.type === NodeType.PROMPT_INPUT) {
                         console.log('[Node Render] PROMPT_INPUT node:', node.id, 'isEpisodeChild:', isEpisodeChild, 'inputs:', node.inputs);
-                        console.log('[Node Render] AllNodes episode check:', allNodes?.filter(n => n.type === NodeType.SCRIPT_EPISODE).map(n => n.id));
                     }
                     return isEpisodeChild;
                 })() ? (
@@ -3459,8 +3578,8 @@ const NodeComponent: React.FC<NodeProps> = ({
             willChange: isInteracting ? 'left, top, width, height' : 'auto'
         }}
         onMouseDown={(e) => onNodeMouseDown(e, node.id)}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         onContextMenu={(e) => onNodeContextMenu(e, node.id)}
         onWheel={(e) => e.stopPropagation()}
     >
