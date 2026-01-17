@@ -329,7 +329,7 @@ async function handleGenerateThreeView(
 }
 
 /**
- * 生成单个角色（完整流程：档案 -> 表情 -> 三视图）
+ * 生成单个角色（仅生成档案，需要手动点击生成九宫格和三视图）
  */
 async function handleGenerateSingle(
   nodeId: string,
@@ -339,18 +339,12 @@ async function handleGenerateSingle(
   onNodeUpdate: (nodeId: string, updates: any) => void
 ) {
   try {
-    // 1. 生成档案
+    // 仅生成档案，不自动生成表情和三视图
     await handleRetry(nodeId, charName, node, allNodes, onNodeUpdate);
 
-    // 2. 生成表情图
-    await handleGenerateExpression(nodeId, charName, node, allNodes, onNodeUpdate);
-
-    // 3. 生成三视图
-    await handleGenerateThreeView(nodeId, charName, node, allNodes, onNodeUpdate);
-
-    console.log('[CharacterAction] Full character generation completed:', charName);
+    console.log('[CharacterAction] Character profile generated:', charName);
   } catch (error) {
-    console.error('[CharacterAction] Full character generation failed:', charName, error);
+    console.error('[CharacterAction] Character profile generation failed:', charName, error);
   }
 }
 
@@ -407,29 +401,6 @@ function getVisualPromptPrefix(style: string, genre: string, setting: string): s
 }
 
 /**
- * 构建表情图提示词
- */
-function buildExpressionPrompt(stylePrompt: string, profile: any): string {
-  return `
-    ${stylePrompt}
-
-    PORTRAIT COMPOSITION: Extreme close-up, head and shoulders only, facial expressions focus.
-
-    Character facial expressions reference sheet, 3x3 grid layout showing 9 different facial expressions (joy, anger, sorrow, surprise, fear, disgust, neutral, thinking, tired).
-
-    Character Face Description: ${profile.appearance}.
-
-    CRITICAL CONSTRAINTS:
-    - Close-up portrait shots ONLY (head and shoulders)
-    - NO full body, NO lower body, NO legs
-    - Focus on facial features, expressions, and head
-    - SOLID FLAT BACKGROUND - Plain solid color background ONLY (white, light gray, or black). NO patterns, NO gradients, NO environmental elements
-    - Consistent character design across all 9 expressions
-    - 3x3 grid composition
-  `;
-}
-
-/**
  * 构建负面提示词
  */
 function buildNegativePrompt(node: AppNode, allNodes: AppNode[]): string {
@@ -441,46 +412,11 @@ function buildNegativePrompt(node: AppNode, allNodes: AppNode[]): string {
   } else if (detectedStyle === 'ANIME') {
     negative += ", photorealistic, realistic, photo, 3d, cgi, live action";
   } else if (detectedStyle === '3D') {
-    negative += ", 2d, flat, anime, photo, painting, illustrated, 2d animation";
+    // 3D类型：明确排除2D风格，保留3D质感
+    negative += ", 2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D, paper cutout, translucent, ghostly, ethereal, glowing aura";
   }
 
   negative += ", full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background";
 
   return negative;
-}
-
-/**
- * 构建三视图提示词
- */
-function buildThreeViewPrompt(stylePrompt: string, state: any): string {
-  const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
-
-  return `
-    ${stylePrompt}
-
-    CHARACTER THREE-VIEW GENERATION TASK:
-    Generate a character three-view reference sheet (front, side, back views).
-
-    Character Description:
-    ${state.profile?.appearance || state.profile?.basicStats}
-
-    Attributes: ${state.profile?.basicStats}
-
-    COMPOSITION:
-    - Create a vertical layout with 3 views: Front View, Side View (profile), Back View
-    - Full body standing pose, neutral expression
-    - Clean white or neutral background
-    - Each view should clearly show the character from the specified angle
-
-    CRITICAL REQUIREMENTS:
-    1. CONSISTENT CHARACTER DESIGN - All three views must show the SAME character with consistent facial features, hair style, body proportions, and clothing
-    2. NO TEXT, NO LABELS - Pure image only, no "Front View" or "Side View" text labels
-    3. PROPER ANATOMY - Ensure correct body proportions and natural stance for each view angle
-    4. NEUTRAL EXPRESSION - Use a calm, neutral face expression across all views
-    5. CLEAR ALIGNMENT - Front, side, and back views should be vertically aligned and proportionally consistent
-
-    ${state.expressionSheet ? 'REFERENCE IMAGE: Use the expression sheet as visual reference for face and clothing details.' : ''}
-
-    Negative Prompt: ${negativePrompt}, text, labels, writing, letters
-  `;
 }

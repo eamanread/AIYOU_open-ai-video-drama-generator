@@ -867,7 +867,7 @@ export const App = () => {
       if (style === 'ANIME') {
           base = 'Anime style, Japanese 2D animation, vibrant colors, Studio Ghibli style, clean lines, high detail, 8k resolution, cel shaded, flat color, expressive characters.';
       } else if (style === '3D') {
-          base = '3D animated character, stylized 3D render, toon shading, cel shading, artistic rendering, non-photorealistic, smooth stylized skin, clean surfaces, vibrant colors, 3D anime aesthetics, 3D animation quality.';
+          base = '3D animated character, high precision 3D modeling, stylized 3D render, PBR shading, subsurface scattering, ambient occlusion, delicate skin texture, flowing fabric clothing, individual hair strands, soft realistic lighting, 3D anime aesthetics, 3D animation quality, vibrant colors.';
       } else {
           // Default to REAL
           base = 'Cinematic, Photorealistic, 8k, raw photo, hyperrealistic, movie still, live action, cinematic lighting, Arri Alexa, depth of field, film grain, color graded.';
@@ -2222,7 +2222,7 @@ export const App = () => {
                   const stylePrompt = node.data.storyboardStyle === 'ANIME'
                       ? 'Anime style, Japanese animation, Studio Ghibli style, 2D, Cel shaded, vibrant colors.'
                       : node.data.storyboardStyle === '3D'
-                      ? '3D animated character, stylized 3D render, toon shading, cel shading, artistic rendering, non-photorealistic, smooth stylized skin, clean surfaces, vibrant colors, 3D anime aesthetics, 3D animation quality.'
+                      ? '3D animated character, high precision 3D modeling, stylized 3D render, PBR shading, subsurface scattering, ambient occlusion, delicate skin texture, flowing fabric clothing, individual hair strands, soft realistic lighting, 3D anime aesthetics, 3D animation quality.'
                       : 'Cinematic Movie Still, Photorealistic, 8k, Live Action, highly detailed.';
 
                   const visualPrompt = `

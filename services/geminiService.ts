@@ -270,11 +270,14 @@ const CHARACTER_PROFILE_INSTRUCTION = `
 3. "appearancePrompt" 字段必须包含具体的视觉风格关键词，并且描述清晰，可以直接用于文生图模型。
 
 **3D动画风格特别要求（当 Visual Style 为 3D 时）：**
-- 必须使用：3d animated character, stylized rendering
-- 皮肤描述：smooth stylized skin, clean surfaces, no skin texture, no pores, no wrinkles
-- 着色风格：toon shading, cel shading, artistic rendering, non-photorealistic
-- 严格禁止：realistic skin texture, skin details, photorealistic, photo, photography, hyperrealistic
-- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style
+- 必须使用：high precision 3D modeling, 3D animated character, stylized 3D render, PBR shading
+- 皮肤质感：delicate skin texture, subsurface scattering, 保留皮肤细节体现3D质感
+- 服饰细节：flowing fabric clothing, 纱质服饰的飘逸感
+- 发丝细节：individual hair strands, 发丝根根分明
+- 光影效果：soft realistic lighting, ambient occlusion
+- 着色风格：PBR shading, stylized rendering
+- 严格禁止：2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D
+- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style, 高精度3D建模的立体感
 
 4. 如果上下文没有提供足够信息，请根据角色定位进行合理的**AI自动补全**，使其丰满。
 `;
@@ -300,11 +303,14 @@ const SUPPORTING_CHARACTER_INSTRUCTION = `
 4. 配角不需要详细的性格、动机、关系等信息。
 
 **3D动画风格特别要求（当 Visual Style 为 3D 时）：**
-- 必须使用：3d animated character, stylized rendering
-- 皮肤描述：smooth stylized skin, clean surfaces, no skin texture, no pores
-- 着色风格：toon shading, cel shading, artistic rendering, non-photorealistic
-- 严格禁止：realistic skin texture, skin details, photorealistic, photo, photography
-- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style
+- 必须使用：high precision 3D modeling, 3D animated character, stylized 3D render, PBR shading
+- 皮肤质感：delicate skin texture, subsurface scattering, 保留皮肤细节体现3D质感
+- 服饰细节：flowing fabric clothing, 纱质服饰的飘逸感
+- 发丝细节：individual hair strands, 发丝根根分明
+- 光影效果：soft realistic lighting, ambient occlusion
+- 着色风格：PBR shading, stylized rendering
+- 严格禁止：2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D
+- 强调：3D anime aesthetics, stylized features, vibrant colors, artistic style, 高精度3D建模的立体感
 `;
 
 const DRAMA_ANALYZER_INSTRUCTION = `

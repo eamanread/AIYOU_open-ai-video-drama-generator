@@ -1801,7 +1801,10 @@ const NodeComponent: React.FC<NodeProps> = ({
                                               <div className="bg-[#18181b] rounded-lg p-3 border border-white/5 flex items-center justify-center gap-2">
                                                   <Loader2 size={12} className="animate-spin text-orange-400" />
                                                   <span className="text-[10px] text-slate-400">
-                                                      {profile?.isSaved ? '正在生成三视图并保存...' : '正在生成角色表情...'}
+                                                      {profile?.isGeneratingThreeView ? '正在生成三视图...' :
+                                                       profile?.isGeneratingExpression ? '正在生成九宫格表情...' :
+                                                       !profile?.expressionSheet ? '正在生成角色档案...' :
+                                                       '正在生成中...'}
                                                   </span>
                                               </div>
                                           )}
@@ -1843,22 +1846,61 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                           <div className="text-[9px] text-slate-400 line-clamp-3 leading-relaxed">{profile.personality || '无性格描述'}</div>
                                                       </div>
                                                   </div>
-                                                  <div className="flex items-center gap-2 mt-1">
-                                                      <button 
-                                                          onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'SAVE', name); }}
-                                                          disabled={isSaved}
-                                                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold transition-all ${isSaved ? 'bg-green-500/20 text-green-400 cursor-default' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}
-                                                      >
-                                                          {isSaved ? <CheckCircle size={10} /> : <Save size={10} />}
-                                                          {isSaved ? '已保存' : '保存 & 生成三视图'}
-                                                      </button>
-                                                      <button
-                                                          onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'RETRY', name); }}
-                                                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
-                                                      >
-                                                          <RotateCcw size={10} /> 重新生成
-                                                      </button>
-                                                  </div>
+
+                                                  {/* 根据生成状态显示不同的按钮 */}
+                                                  {!profile.expressionSheet && !profile.threeViewSheet && (
+                                                      <div className="flex items-center gap-2 mt-1">
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_EXPRESSION', name); }}
+                                                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 transition-all"
+                                                          >
+                                                              <Sparkles size={10} /> 生成九宫格
+                                                          </button>
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); alert('请先生成九宫格表情图'); }}
+                                                              disabled
+                                                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-white/5 text-slate-600 cursor-not-allowed"
+                                                          >
+                                                              <Layers size={10} /> 生成三视图
+                                                          </button>
+                                                      </div>
+                                                  )}
+
+                                                  {profile.expressionSheet && !profile.threeViewSheet && (
+                                                      <div className="flex items-center gap-2 mt-1">
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_THREE_VIEW', name); }}
+                                                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 transition-all"
+                                                          >
+                                                              <Layers size={10} /> 生成三视图
+                                                          </button>
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'RETRY', name); }}
+                                                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                                                          >
+                                                              <RotateCcw size={10} /> 重新生成
+                                                          </button>
+                                                      </div>
+                                                  )}
+
+                                                  {profile.expressionSheet && profile.threeViewSheet && (
+                                                      <div className="flex items-center gap-2 mt-1">
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'SAVE', name); }}
+                                                              disabled={isSaved}
+                                                              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold transition-all ${isSaved ? 'bg-green-500/20 text-green-400 cursor-default' : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white'}`}
+                                                          >
+                                                              {isSaved ? <CheckCircle size={10} /> : <Save size={10} />}
+                                                              {isSaved ? '已保存' : '保存'}
+                                                          </button>
+                                                          <button
+                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'RETRY', name); }}
+                                                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                                                          >
+                                                              <RotateCcw size={10} /> 重新生成
+                                                          </button>
+                                                      </div>
+                                                  )}
                                               </div>
                                           )}
 

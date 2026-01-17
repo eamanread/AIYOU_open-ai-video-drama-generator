@@ -40,6 +40,61 @@ async function generateTestImage(): Promise<Blob> {
 }
 
 /**
+ * 将图片Blob转换为PNG格式（解决WebP等格式不被Sora API接受的问题）
+ * 使用Canvas重新绘制图片，确保输出真正的PNG格式
+ */
+async function convertImageToPNG(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      try {
+        // 创建canvas并绘制图片
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error('无法获取Canvas 2D上下文');
+        }
+
+        // 绘制图片到canvas
+        ctx.drawImage(img, 0, 0);
+
+        // 转换为PNG格式（高质量，无损压缩）
+        canvas.toBlob((pngBlob) => {
+          URL.revokeObjectURL(url);
+          if (pngBlob) {
+            resolve(pngBlob);
+          } else {
+            reject(new Error('Canvas转换为PNG失败'));
+          }
+        }, 'image/png');
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        reject(error);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片加载失败，可能是格式不支持'));
+    };
+
+    img.src = url;
+  });
+}
+
+/**
+ * 检测Blob是否为图片格式
+ */
+function isImageBlob(blob: Blob): boolean {
+  return blob.type.startsWith('image/');
+}
+
+/**
  * 上传文件到后端，由后端代理上传到腾讯云 COS
  */
 async function uploadToTencentCOS(
@@ -50,10 +105,23 @@ async function uploadToTencentCOS(
   // 后端 API 地址
   const API_BASE_URL = 'http://localhost:3001';
 
-  // 创建 FormData
+  // 🔧 确保文件扩展名与 blob 类型一致
+  // PNG 转换后，blob.type 是 'image/png'，确保文件名也是 .png
+  let finalFileName = fileName;
+  if (file.type === 'image/png' && !fileName.toLowerCase().endsWith('.png')) {
+    finalFileName = fileName.replace(/\.[^.]+$/, '.png');
+  }
+
+  // 创建 FormData，使用正确的文件名
   const formData = new FormData();
-  formData.append('file', file, fileName);
+  formData.append('file', file, finalFileName);
   formData.append('folder', 'aiyou-uploads');
+
+  console.log('[uploadToTencentCOS] 上传文件:', {
+    fileName: finalFileName,
+    blobType: file.type,
+    blobSize: file.size
+  });
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/upload-oss`, {
@@ -403,6 +471,20 @@ export async function uploadFileToOSS(
     }
   } else {
     blob = file;
+  }
+
+  // 🔧 如果是图片格式，转换为PNG以确保Sora API兼容性
+  // 解决WebP等格式被拒绝的问题
+  if (isImageBlob(blob)) {
+    try {
+      console.log('[OSS Service] 检测到图片格式:', blob.type, '→ 转换为PNG');
+      blob = await convertImageToPNG(blob);
+      console.log('[OSS Service] PNG转换成功');
+    } catch (error: any) {
+      console.error('[OSS Service] PNG转换失败:', error);
+      // 如果转换失败，继续使用原始blob（可能是已经是PNG/JPG）
+      // 让OSS API来决定是否接受
+    }
   }
 
   if (config.provider === 'tencent') {
