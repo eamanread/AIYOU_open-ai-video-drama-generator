@@ -2314,7 +2314,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                               <button
                                                   onClick={(e) => {
                                                       e.stopPropagation();
-                                                      const durations = ['5', '10', '15'];
+                                                      const durations = ['10', '15', '25'];
                                                       const currentIndex = durations.indexOf(tg.sora2Config?.duration || '10');
                                                       const nextDuration = durations[(currentIndex + 1) % 3];
                                                       const baseConfig = { aspect_ratio: '16:9', duration: '10', hd: true };
@@ -2326,7 +2326,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                       });
                                                   }}
                                                   className="px-1.5 py-0.5 bg-slate-600 hover:bg-slate-500 text-white text-[8px] rounded transition-colors"
-                                                  title={`切换时长: ${tg.sora2Config?.duration || '10'}秒`}
+                                                  title={`切换时长: ${tg.sora2Config?.duration || '10'}s`}
                                               >
                                                   ⏱️
                                               </button>
@@ -3051,7 +3051,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                          <div className="flex-1">
                                              <div className="text-[9px] font-bold text-slate-500 mb-1">时长</div>
                                              <div className="flex gap-1">
-                                                 {(['5', '10', '15'] as const).map((dur) => (
+                                                 {(['10', '15', '25'] as const).map((dur) => (
                                                      <button
                                                          key={dur}
                                                          onClick={() => updateConfig({ duration: dur as any })}
@@ -3062,7 +3062,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                                  : 'bg-white/10 text-slate-400 hover:bg-white/20'
                                                          }`}
                                                      >
-                                                         {dur}秒
+                                                         {dur}s
                                                      </button>
                                                  ))}
                                              </div>

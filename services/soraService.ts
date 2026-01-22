@@ -76,7 +76,7 @@ function extractTaskId(result: any): string {
 export async function submitSoraTask(
   soraPrompt: string,
   referenceImageUrl?: string,
-  sora2Config?: { aspect_ratio: '16:9' | '9:16'; duration: '5' | '10' | '15'; hd: boolean },
+  sora2Config?: { aspect_ratio: '16:9' | '9:16'; duration: '10' | '15' | '25'; hd: boolean },
   context?: { nodeId?: string; nodeType?: string }
 ): Promise<SoraSubmitResult> {
   const apiKey = getSoraApiKey();

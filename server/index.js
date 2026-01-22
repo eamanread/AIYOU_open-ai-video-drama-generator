@@ -229,7 +229,7 @@ app.post('/api/sora/generations', async (req, res) => {
       model: 'sora-2',
       images: images || [],
       aspect_ratio: aspect_ratio || '16:9',
-      duration: duration || '5',
+      duration: duration || '10',
       hd: hd !== undefined ? hd : true,
       watermark: watermark !== undefined ? watermark : true,
       private: isPrivate !== undefined ? isPrivate : true

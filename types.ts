@@ -288,7 +288,7 @@ export interface SoraModel {
 // Sora2 用户可配置项
 export interface Sora2UserConfig {
   aspect_ratio: '16:9' | '9:16';
-  duration: '5' | '10' | '15';
+  duration: '10' | '15' | '25';
   hd: boolean;
 }
 
