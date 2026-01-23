@@ -31,7 +31,7 @@ const DEFAULT_EXPRESSION_PROMPT: PromptPair = {
 - 所有9个表情中保持一致的角色设计
 - 3×3网格构图`,
 
-  en: `Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture (not overly realistic), flowing fabric clothing, individual hair strands, soft ethereal lighting, cinematic rim lighting with cool blue tones, otherworldly gaze, elegant and cold demeanor.
+  en: `Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture (not overly realistic), flowing fabric clothing, individual hair strands, soft ethereal lighting, otherworldly gaze, elegant and cold demeanor.
 
 PORTRAIT COMPOSITION: Extreme close-up, head and shoulders only, facial expressions focus.
 
@@ -71,7 +71,7 @@ const DEFAULT_THREE_VIEW_PROMPT: PromptPair = {
 
 参考图片：使用表情图作为面部和服装细节的视觉参考。`,
 
-  en: `Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture (not overly realistic), flowing fabric clothing, individual hair strands, soft ethereal lighting, cinematic rim lighting with cool blue tones, otherworldly gaze, elegant and cold demeanor.
+  en: `Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture (not overly realistic), flowing fabric clothing, individual hair strands, soft ethereal lighting, otherworldly gaze, elegant and cold demeanor.
 
 CHARACTER THREE-VIEW GENERATION TASK:
 Generate a character three-view reference sheet (front, side, back views).

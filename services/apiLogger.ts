@@ -108,6 +108,9 @@ class APILogger {
 
         this.saveToStorage();
 
+        // 异步发送日志到服务器（不阻塞主流程）
+        this.sendToServer(log);
+
         console.log(`[API Logger] Success: ${log.apiName}`, {
             logId,
             duration: log.duration,
@@ -130,6 +133,9 @@ class APILogger {
         };
 
         this.saveToStorage();
+
+        // 异步发送日志到服务器（不阻塞主流程）
+        this.sendToServer(log);
 
         console.error(`[API Logger] Error: ${log.apiName}`, {
             logId,
@@ -210,6 +216,70 @@ class APILogger {
     }
 
     // ===== 私有方法 =====
+
+    /**
+     * 发送日志到服务器（异步，不阻塞主流程）
+     */
+    private sendToServer(log: APILogEntry) {
+        // 使用 sendBeacon 或 fetch 发送日志
+        const logUrl = 'http://localhost:3001/api/logs';
+
+        // 清理日志数据以减小大小
+        const cleanLog = {
+            id: log.id,
+            timestamp: log.timestamp,
+            apiName: log.apiName,
+            nodeId: log.nodeId,
+            nodeType: log.nodeType,
+            status: log.status,
+            duration: log.duration,
+            request: {
+                model: log.request.model,
+                prompt: log.request.prompt ? this.truncateString(log.request.prompt, 500) : undefined,
+                inputImagesCount: log.request.inputImagesCount,
+                generationConfig: log.request.generationConfig
+            },
+            response: log.response ? {
+                success: log.response.success,
+                error: log.response.error ? this.truncateString(log.response.error, 500) : undefined,
+                details: log.response.details
+            } : undefined
+        };
+
+        // 使用 sendBeacon（更可靠，页面卸载时也能发送）
+        if (navigator.sendBeacon) {
+            const blob = new Blob([JSON.stringify(cleanLog)], { type: 'application/json' });
+            const success = navigator.sendBeacon(logUrl, blob);
+            if (success) {
+                console.log(`[API Logger] ✓ 日志已发送到服务器: ${log.apiName} (${log.status})`);
+            } else {
+                console.warn(`[API Logger] ✗ sendBeacon失败，降级到fetch: ${log.apiName}`);
+                // 降级到 fetch
+                this.sendLogViaFetch(logUrl, cleanLog);
+            }
+        } else {
+            this.sendLogViaFetch(logUrl, cleanLog);
+        }
+    }
+
+    /**
+     * 使用fetch发送日志
+     */
+    private sendLogViaFetch(logUrl: string, cleanLog: any) {
+        fetch(logUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanLog),
+            keepalive: true
+        })
+        .then(() => {
+            console.log(`[API Logger] ✓ 日志已通过fetch发送: ${cleanLog.apiName} (${cleanLog.status})`);
+        })
+        .catch(err => {
+            // 不阻塞主流程，但记录错误
+            console.error(`[API Logger] ✗ 发送日志失败: ${cleanLog.apiName}`, err.message);
+        });
+    }
 
     private sanitizeResponse(response: any): any {
         // 对于 API 日志调试面板，保留完整信息

@@ -1,6 +1,6 @@
 
 import { AppNode, NodeStatus, NodeType, StoryboardShot, CharacterProfile } from '../types';
-import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCircle, CheckCircle, Plus, Maximize2, Download, MoreHorizontal, Wand2, Scaling, FileSearch, Edit, Loader2, Layers, Trash2, X, Upload, Scissors, Film, MousePointerClick, Crop as CropIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripHorizontal, Link, Copy, Monitor, Music, Pause, Volume2, Mic2, BookOpen, ScrollText, Clapperboard, LayoutGrid, Box, User, Users, Save, RotateCcw, Eye, List, Sparkles, ZoomIn, ZoomOut, Minus, Circle, Square, Maximize, Move, RotateCw, TrendingUp, TrendingDown, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight, Palette, Grid, MoveHorizontal, ArrowUpDown } from 'lucide-react';
+import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCircle, CheckCircle, Plus, Maximize2, Download, MoreHorizontal, Wand2, Scaling, FileSearch, Edit, Loader2, Layers, Trash2, X, Upload, Scissors, Film, MousePointerClick, Crop as CropIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripHorizontal, Link, Copy, Monitor, Music, Pause, Volume2, Mic2, BookOpen, ScrollText, Clapperboard, LayoutGrid, Box, User, Users, Save, RotateCcw, Eye, List, Sparkles, ZoomIn, ZoomOut, Minus, Circle, Square, Maximize, Move, RotateCw, TrendingUp, TrendingDown, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight, Palette, Grid, MoveHorizontal, ArrowUpDown, Database } from 'lucide-react';
 import { VideoModeSelector, SceneDirectorOverlay } from './VideoNodeModules';
 import { PromptEditor } from './PromptEditor';
 import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
@@ -2630,11 +2630,13 @@ const NodeComponent: React.FC<NodeProps> = ({
           const violationReason = node.data.violationReason;
           const locallySaved = node.data.locallySaved;
           const taskNumber = node.data.taskNumber;
+          const soraTaskId = node.data.soraTaskId;
 
           const [isPlaying, setIsPlaying] = useState(false);
           const [currentTime, setCurrentTime] = useState(0);
           const [durationValue, setDurationValue] = useState(0);
           const videoRef = useRef<HTMLVideoElement>(null);
+          const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
           // 格式化时间显示
           const formatTime = (time: number) => {
@@ -2643,11 +2645,140 @@ const NodeComponent: React.FC<NodeProps> = ({
               return `${mins}:${secs.toString().padStart(2, '0')}`;
           };
 
-          // 下载视频
+          // 直接下载视频（从 URL 或浏览器缓存）
+          const handleDirectDownload = async () => {
+              if (!videoUrl) {
+                  alert('视频 URL 不存在');
+                  return;
+              }
+
+              try {
+                  console.log('[直接下载] 开始下载:', videoUrl);
+
+                  // 尝试使用 fetch 下载
+                  const response = await fetch(videoUrl);
+                  if (!response.ok) {
+                      throw new Error(`HTTP ${response.status}`);
+                  }
+
+                  const blob = await response.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `sora-video-${taskNumber || 'direct'}-${Date.now()}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+
+                  console.log('[直接下载] ✅ 下载成功');
+              } catch (e) {
+                  console.error('[直接下载] ❌ 下载失败:', e);
+
+                  // 如果 fetch 失败，尝试在新标签页打开
+                  console.log('[直接下载] 尝试在新标签页打开');
+                  window.open(videoUrl, '_blank');
+                  alert('已在新标签页打开视频，请在视频上右键选择"视频另存为"来下载。');
+              }
+
+              setContextMenu(null);
+          };
+
+          // 下载视频 - 智能兼容方案
           const handleDownload = async () => {
-              if (videoUrl) {
-                  try {
+              if (!videoUrl) {
+                  alert('视频 URL 不存在');
+                  return;
+              }
+
+              try {
+                  console.log('[视频下载] 开始下载视频:', { soraTaskId, videoUrl });
+
+                  // 如果有 soraTaskId，先尝试从数据库下载
+                  if (soraTaskId) {
+                      try {
+                          const downloadUrl = `http://localhost:3001/api/videos/download/${soraTaskId}`;
+                          const response = await fetch(downloadUrl);
+
+                          if (response.ok) {
+                              const contentType = response.headers.get('content-type');
+
+                              // 检查是否是视频文件
+                              if (!contentType || !contentType.includes('application/json')) {
+                                  const blob = await response.blob();
+                                  console.log('[视频下载] ✅ 从数据库下载成功');
+
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = `sora-task-${taskNumber || 'video'}-${Date.now()}.mp4`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  URL.revokeObjectURL(url);
+                                  return;
+                              }
+                          }
+                      } catch (dbError) {
+                          console.log('[视频下载] 数据库中未找到，尝试直接下载:', dbError.message);
+                      }
+                  }
+
+                  // 数据库中没有或没有 soraTaskId，提供选项
+                  const shouldSaveToDb = confirm(
+                      '此视频尚未保存到数据库。\n\n' +
+                      '点击"确定"将视频保存到数据库后再下载（推荐，以后可快速下载）\n' +
+                      '点击"取消"直接从原始地址下载（可能较慢）'
+                  );
+
+                  if (shouldSaveToDb) {
+                      // 保存到数据库
+                      const taskId = soraTaskId || `video-${Date.now()}`;
+                      console.log('[视频下载] 正在保存到数据库...');
+
+                      const saveResponse = await fetch('http://localhost:3001/api/videos/save', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              videoUrl,
+                              taskId,
+                              taskNumber,
+                              soraPrompt: node.data.soraPrompt || ''
+                          })
+                      });
+
+                      const saveResult = await saveResponse.json();
+
+                      if (saveResult.success) {
+                          console.log('[视频下载] ✅ 保存成功，开始下载');
+                          alert('视频已保存到数据库！现在开始下载...');
+
+                          // 从数据库下载
+                          const downloadUrl = `http://localhost:3001/api/videos/download/${taskId}`;
+                          const downloadResponse = await fetch(downloadUrl);
+                          const blob = await downloadResponse.blob();
+
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `sora-task-${taskNumber || 'video'}-${Date.now()}.mp4`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                      } else {
+                          throw new Error(saveResult.error || '保存失败');
+                      }
+                  } else {
+                      // 直接从原始 URL 下载
+                      console.log('[视频下载] 直接从原始地址下载');
+                      alert('正在从原始地址下载，请稍候...');
+
                       const response = await fetch(videoUrl);
+                      if (!response.ok) {
+                          throw new Error(`HTTP ${response.status}`);
+                      }
+
                       const blob = await response.blob();
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
@@ -2657,9 +2788,12 @@ const NodeComponent: React.FC<NodeProps> = ({
                       a.click();
                       document.body.removeChild(a);
                       URL.revokeObjectURL(url);
-                  } catch (e) {
-                      console.error('Download failed:', e);
                   }
+
+                  console.log('[视频下载] ✅ 下载完成');
+              } catch (e) {
+                  console.error('[视频下载] ❌ 下载失败:', e);
+                  alert(`视频下载失败: ${e.message}\n\n您也可以右键点击视频，选择"视频另存为"来下载。`);
               }
           };
 
@@ -2682,6 +2816,11 @@ const NodeComponent: React.FC<NodeProps> = ({
                               className="w-full h-full object-cover bg-zinc-900"
                               loop
                               playsInline
+                              onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setContextMenu({ x: e.clientX, y: e.clientY });
+                              }}
+                              onClick={() => setContextMenu(null)}
                               onTimeUpdate={() => {
                                   if (videoRef.current) {
                                       setCurrentTime(videoRef.current.currentTime);
@@ -2691,6 +2830,48 @@ const NodeComponent: React.FC<NodeProps> = ({
                               onPause={() => setIsPlaying(false)}
                               onEnded={() => setIsPlaying(false)}
                           />
+
+                          {/* 右键菜单 */}
+                          {contextMenu && (
+                              <div
+                                  className="fixed z-50 bg-zinc-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[200px]"
+                                  style={{ left: contextMenu.x, top: contextMenu.y }}
+                                  onClick={(e) => e.stopPropagation()}
+                              >
+                                  <div className="px-3 py-2 text-xs text-white/50 border-b border-white/10 mb-1">
+                                    视频操作
+                                  </div>
+                                  <button
+                                      onClick={handleDirectDownload}
+                                      className="w-full px-3 py-2 text-left text-xs text-white hover:bg-white/10 flex items-center gap-2 transition-colors"
+                                  >
+                                      <Download size={14} />
+                                      直接下载视频
+                                  </button>
+                                  <button
+                                      onClick={handleDownload}
+                                      className="w-full px-3 py-2 text-left text-xs text-white hover:bg-white/10 flex items-center gap-2 transition-colors"
+                                  >
+                                      <Database size={14} />
+                                      从数据库下载
+                                  </button>
+                                  <div className="border-t border-white/10 my-1"></div>
+                                  <button
+                                      onClick={() => setContextMenu(null)}
+                                      className="w-full px-3 py-2 text-left text-xs text-white/50 hover:bg-white/10 transition-colors"
+                                  >
+                                      取消
+                                  </button>
+                              </div>
+                          )}
+
+                          {/* 点击其他地方关闭菜单 */}
+                          {contextMenu && (
+                              <div
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setContextMenu(null)}
+                              />
+                          )}
 
                           {/* Controls Overlay */}
                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-3">

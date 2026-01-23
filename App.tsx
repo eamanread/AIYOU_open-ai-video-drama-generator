@@ -47,6 +47,45 @@ const SPRING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const SNAP_THRESHOLD = 8; // Pixels for magnetic snap
 const COLLISION_PADDING = 24; // Spacing when nodes bounce off each other
 
+/**
+ * 保存视频到服务器数据库
+ * @param videoUrl 视频 URL
+ * @param taskId 任务 ID
+ * @param taskNumber 任务编号
+ * @param soraPrompt Sora 提示词
+ */
+async function saveVideoToDatabase(videoUrl: string, taskId: string, taskNumber: number, soraPrompt: string) {
+    try {
+        console.log('[视频保存] 正在保存视频到数据库...', {
+            taskId,
+            taskNumber,
+            videoUrl: videoUrl.substring(0, 100) + '...'
+        });
+
+        const response = await fetch('http://localhost:3001/api/videos/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                videoUrl,
+                taskId,
+                taskNumber,
+                soraPrompt
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            console.log('[视频保存] ✅ 视频已保存到数据库:', result);
+        } else {
+            console.error('[视频保存] ❌ 保存失败:', result.error);
+        }
+    } catch (error) {
+        console.error('[视频保存] ❌ 保存失败:', error);
+        // 不阻塞主流程，静默失败
+    }
+}
+
 // Helper to get image dimensions
 const getImageDimensions = (src: string): Promise<{width: number, height: number}> => {
     return new Promise((resolve, reject) => {
@@ -1374,19 +1413,44 @@ export const App = () => {
 
                       console.log('[SORA_VIDEO_GENERATOR] Fusion completed:', fusionResults.length, 'groups');
 
-                      // 更新任务组数据
-                      const updatedTaskGroups = taskGroups.map(tg => {
+                      // 导入OSS服务
+                      const { getOSSConfig } = await import('./services/soraConfigService');
+                      const { uploadFileToOSS } = await import('./services/ossService');
+
+                      // 检查是否配置了OSS
+                      const ossConfig = getOSSConfig();
+                      if (!ossConfig) {
+                          console.warn('[SORA_VIDEO_GENERATOR] OSS未配置，融合图将使用Base64格式，可能导致显示问题');
+                      }
+
+                      // 更新任务组数据（如果配置了OSS，先上传）
+                      const updatedTaskGroups = await Promise.all(taskGroups.map(async (tg) => {
                           const result = fusionResults.find(r => r.groupId === tg.id);
                           if (result) {
+                              let imageUrl = result.fusedImage;
+
+                              // 如果配置了OSS，上传融合图
+                              if (ossConfig) {
+                                  try {
+                                      const fileName = `sora-reference-${tg.id}-${Date.now()}.png`;
+                                      imageUrl = await uploadFileToOSS(result.fusedImage, fileName, ossConfig);
+                                      console.log('[SORA_VIDEO_GENERATOR] Task group', tg.taskNumber, 'reference image uploaded to OSS:', imageUrl);
+                                  } catch (error: any) {
+                                      console.error('[SORA_VIDEO_GENERATOR] Failed to upload reference image for task group', tg.taskNumber, ':', error);
+                                      // 上传失败，回退到Base64
+                                      imageUrl = result.fusedImage;
+                                  }
+                              }
+
                               return {
                                   ...tg,
-                                  referenceImage: result.fusedImage, // 使用referenceImage字段
+                                  referenceImage: imageUrl,
                                   imageFused: true,
                                   generationStatus: 'image_fused' as const
                               };
                           }
                           return tg;
-                      });
+                      }));
 
                       handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
                       setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
@@ -1442,6 +1506,9 @@ export const App = () => {
                   results.forEach((result, index) => {
                       const taskGroup = taskGroupsToGenerate[index];
                       if (result.status === 'completed' && result.videoUrl) {
+                          // 保存视频到服务器数据库
+                          saveVideoToDatabase(result.videoUrl, taskGroup.soraTaskId || taskGroup.id, taskGroup.taskNumber, taskGroup.soraPrompt);
+
                           // Create child node
                           const childNodeId = `n-sora-child-${Date.now()}-${index}`;
                           const childNode: AppNode = {
@@ -1460,7 +1527,8 @@ export const App = () => {
                                   duration: result.duration,
                                   quality: result.quality,
                                   isCompliant: result.isCompliant,
-                                  violationReason: result.violationReason
+                                  violationReason: result.violationReason,
+                                  soraTaskId: taskGroup.soraTaskId || taskGroup.id  // 用于下载
                               },
                               inputs: [node.id]
                           };
@@ -2932,8 +3000,10 @@ COMPOSITION REQUIREMENTS:
                     console.log(`[SORA_VIDEO_GENERATOR] Generating professional prompt for task group ${tg.taskNumber}...`);
                     tg.soraPrompt = await buildProfessionalSoraPrompt(tg.splitShots);
                     tg.promptGenerated = true;
-                    // 初始化 Sora2 配置
-                    tg.sora2Config = { ...DEFAULT_SORA2_CONFIG };
+                    // 保留任务组创建时设置的 Sora2 配置（用户选择的时长）
+                    if (!tg.sora2Config) {
+                        tg.sora2Config = { ...DEFAULT_SORA2_CONFIG };
+                    }
                     tg.generationStatus = 'prompt_ready';
                     console.log(`[SORA_VIDEO_GENERATOR] Prompt generated for task group ${tg.taskNumber}`);
                   } catch (error) {
@@ -2942,8 +3012,10 @@ COMPOSITION REQUIREMENTS:
                     const { buildSoraStoryPrompt } = await import('./services/soraService');
                     tg.soraPrompt = buildSoraStoryPrompt(tg.splitShots);
                     tg.promptGenerated = true;
-                    // 初始化 Sora2 配置
-                    tg.sora2Config = { ...DEFAULT_SORA2_CONFIG };
+                    // 保留任务组创建时设置的 Sora2 配置（用户选择的时长）
+                    if (!tg.sora2Config) {
+                        tg.sora2Config = { ...DEFAULT_SORA2_CONFIG };
+                    }
                     tg.generationStatus = 'prompt_ready';
                   }
               }
