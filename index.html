@@ -66,6 +66,25 @@
         font-family: "SF Pro Display", "Inter", sans-serif;
         letter-spacing: -0.02em;
       }
+
+      /* Border glow animation for generating status */
+      @keyframes border-glow {
+        0%, 100% {
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.3),
+                      0 0 20px rgba(59, 130, 246, 0.2);
+          border-color: rgba(59, 130, 246, 0.4);
+        }
+        50% {
+          box-shadow: 0 0 20px rgba(59, 130, 246, 0.6),
+                      0 0 30px rgba(59, 130, 246, 0.4),
+                      0 0 40px rgba(59, 130, 246, 0.2);
+          border-color: rgba(59, 130, 246, 0.8);
+        }
+      }
+
+      .animate-border-glow {
+        animation: border-glow 2s ease-in-out infinite;
+      }
     </style>
   <script type="importmap">
 {

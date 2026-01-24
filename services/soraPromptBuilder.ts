@@ -264,3 +264,120 @@ export function buildSingleShotPrompt(shot: SplitStoryboardShot): string {
 
   return parts.join('\n\n');
 }
+
+/**
+ * 去除Sora提示词中的敏感词
+ * 通过AI优化涉及暴力、色情、版权侵权或名人信息的提示词
+ *
+ * @param soraPrompt 原始Sora提示词
+ * @returns 清理后的提示词
+ */
+export async function removeSensitiveWords(soraPrompt: string): Promise<string> {
+  if (!soraPrompt || soraPrompt.trim().length === 0) {
+    throw new Error('提示词不能为空');
+  }
+
+  const systemPrompt = `你是一个专业的Sora提示词净化工具。你的任务是检测并优化提示词中的敏感内容，同时保持原有的结构和格式不变。
+
+敏感词类型：
+1. 暴力内容：流血、死亡、残肢、酷刑、吐血、鲜血等
+2. 色情内容：裸露、性暗示、不雅行为、赤身裸体等
+3. 版权侵权：商标、品牌、受版权保护的角色名（如米老鼠、迪士尼等）
+4. 名人信息：真实人物姓名、肖像描述
+
+优化原则：
+- 仅针对特定敏感词进行替换或删除
+- 保持Shot结构完整（Shot X:, duration:, Scene:）
+- 保持原有的时长、运镜、场景等描述
+- 使用中性表达替代敏感内容
+- 不要添加任何额外的解释或说明`;
+
+  const userPrompt = `请优化以下Sora提示词，去除敏感词但保持结构不变：
+
+${soraPrompt}
+
+输出要求：
+1. 保持完整的Shot结构（Shot 1:, Shot 2:, 等）
+2. 只修改敏感内容，其他部分完全不变
+3. 直接输出优化后的提示词，不要添加任何解释或前缀
+4. 必须以"Shot 1:"开始
+5. 不要添加"以下是优化后的提示词"等说明文字
+
+敏感词替换示例：
+- "吐血" → "重伤"或"吐白沫"
+- "死亡" → "倒地不起"或"失去意识"
+- "鲜血直流" → "红色液体流出"
+- "赤身裸体" → "穿着单薄"
+- "米老鼠" → "某卡通老鼠角色"
+- "迪士尼" → "某动画公司"`;
+
+  return await logAPICall(
+    'removeSensitiveWords',
+    async () => {
+      const ai = getClient();
+      const modelName = getUserDefaultModel('text');
+
+      console.log('[去敏感词] ===== 开始调用 AI 模型 =====');
+      console.log('[去敏感词] 模型名称:', modelName);
+      console.log('[去敏感词] 原始提示词长度:', soraPrompt.length);
+      console.log('[去敏感词] 原始提示词预览:', soraPrompt.substring(0, 200) + '...');
+
+      const startTime = Date.now();
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: {
+          parts: [
+            { text: systemPrompt + '\n\n' + userPrompt }
+          ]
+        }
+      });
+
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+
+      console.log('[去敏感词] AI 响应收到，耗时:', duration, 'ms');
+      console.log('[去敏感词] 响应状态:', response.candidates?.length > 0 ? '成功' : '失败');
+
+      let text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        console.error('[去敏感词] ❌ AI 返回为空');
+        throw new Error('AI未能返回优化后的提示词');
+      }
+
+      console.log('[去敏感词] AI 返回文本长度:', text.length);
+
+      // 清理多余内容
+      text = text.trim();
+
+      // 确保以Shot 1:开始
+      if (!text.startsWith('Shot 1:')) {
+        console.warn('[去敏感词] ⚠️ 返回内容不以"Shot 1:"开始，尝试提取');
+        // 尝试提取Shot部分
+        const shotMatch = text.match(/Shot 1:/s);
+        if (shotMatch) {
+          text = text.substring(shotMatch.index);
+          console.log('[去敏感词] ✅ 成功提取Shot部分');
+        } else {
+          console.error('[去敏感词] ❌ 无法找到Shot 1');
+          throw new Error('优化后的提示词格式错误：未找到Shot 1');
+        }
+      }
+
+      console.log('[去敏感词] ✅ 处理完成:', {
+        原始长度: soraPrompt.length,
+        优化后长度: text.length,
+        差异: text.length - soraPrompt.length,
+        耗时: `${duration}ms`
+      });
+      console.log('[去敏感词] ===== AI 模型调用完成 =====');
+
+      return text;
+    },
+    {
+      originalLength: soraPrompt.length,
+      promptPreview: soraPrompt.substring(0, 200),
+      modelName: getUserDefaultModel('text')
+    }
+  );
+}

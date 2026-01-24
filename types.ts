@@ -318,6 +318,8 @@ export interface SoraTaskGroup {
   generationStatus: 'idle' | 'prompt_ready' | 'image_fused' | 'uploading' | 'generating' | 'completed' | 'failed';
   soraTaskId?: string;
   progress?: number; // 0-100
+  videoUrl?: string; // 视频URL
+  videoUrlWatermarked?: string; // 带水印的视频URL
   videoFilePath?: string; // 本地视频文件路径
   videoMetadata?: {
     duration: number;
@@ -333,13 +335,16 @@ export interface SoraStorageConfig {
   apiKey?: string;
 
   // API 提供商选择
-  provider?: 'sutu' | 'yunwu';
+  provider?: 'sutu' | 'yunwu' | 'dayuapi';
 
   // 速推 API Key（独立字段，与 apiKey 共享值）
   sutuApiKey?: string;
 
   // 云雾 API Key
   yunwuApiKey?: string;
+
+  // 大洋芋 API Key
+  dayuapiApiKey?: string;
 }
 
 export interface OSSConfig {

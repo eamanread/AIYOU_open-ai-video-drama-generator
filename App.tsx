@@ -389,6 +389,131 @@ export const App = () => {
       loadData();
   }, []);
 
+  // 恢复Sora视频生成轮询（刷新页面后）
+  // 使用 ref 跟踪已恢复的任务，避免重复恢复
+  const restoredTasksRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const restoreSoraPolling = async () => {
+      console.log('[恢复轮询] 检查是否有正在生成的Sora任务...');
+
+      // 找到所有Sora2节点
+      const soraNodes = nodes.filter(n => n.type === NodeType.SORA_VIDEO_GENERATOR);
+
+      for (const node of soraNodes) {
+        const taskGroups = node.data.taskGroups || [];
+        const generatingTasks = taskGroups.filter((tg: any) =>
+          (tg.generationStatus === 'generating' || tg.generationStatus === 'uploading') &&
+          tg.soraTaskId &&
+          !restoredTasksRef.current.has(tg.soraTaskId) // 只恢复未恢复过的任务
+        );
+
+        if (generatingTasks.length === 0) continue;
+
+        console.log(`[恢复轮询] 找到 ${generatingTasks.length} 个正在生成的任务，节点: ${node.id}`);
+
+        try {
+          // 导入checkSoraTaskStatus函数
+          const { checkSoraTaskStatus, pollSoraTaskUntilComplete } = await import('./services/soraService');
+
+          // 对每个正在生成的任务恢复轮询
+          for (const tg of generatingTasks) {
+            // 标记为已恢复，防止重复恢复
+            restoredTasksRef.current.add(tg.soraTaskId);
+
+            console.log(`[恢复轮询] 恢复任务组 ${tg.taskNumber} 的轮询，taskId: ${tg.soraTaskId}`);
+
+            try {
+              // 使用轮询函数持续查询状态
+              const result = await pollSoraTaskUntilComplete(
+                tg.soraTaskId,
+                (progress) => {
+                  console.log(`[恢复轮询] 任务 ${tg.taskNumber} 进度: ${progress}%`);
+                  // 更新进度
+                  setNodes(prevNodes => {
+                    return prevNodes.map(n => {
+                      if (n.id === node.id) {
+                        const updatedTaskGroups = n.data.taskGroups.map((t: any) =>
+                          t.id === tg.id ? { ...t, progress } : t
+                        );
+                        return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                      }
+                      return n;
+                    });
+                  });
+                },
+                5000, // 5秒轮询间隔
+                { nodeId: node.id, nodeType: node.type }
+              );
+
+              // 更新最终状态
+              console.log(`[恢复轮询] 任务 ${tg.taskNumber} 最终状态:`, result.status);
+
+              setNodes(prevNodes => {
+                return prevNodes.map(n => {
+                  if (n.id === node.id) {
+                    const updatedTaskGroups = n.data.taskGroups.map((t: any) => {
+                      if (t.id === tg.id) {
+                        if (result.status === 'completed') {
+                          return {
+                            ...t,
+                            generationStatus: 'completed' as const,
+                            progress: 100
+                          };
+                        } else if (result.status === 'error') {
+                          const rawError = result.violationReason || result._rawData?.error || result._rawData?.message || '视频生成失败';
+                          const errorMessage = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
+                          return {
+                            ...t,
+                            generationStatus: 'failed' as const,
+                            error: errorMessage
+                          };
+                        }
+                      }
+                      return t;
+                    });
+                    return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                  }
+                  return n;
+                });
+              });
+            } catch (error) {
+              console.error(`[恢复轮询] 任务组 ${tg.taskNumber} 轮询失败:`, error);
+              // 标记为失败
+              setNodes(prevNodes => {
+                return prevNodes.map(n => {
+                  if (n.id === node.id) {
+                    const updatedTaskGroups = n.data.taskGroups.map((t: any) => {
+                      if (t.id === tg.id) {
+                        return {
+                          ...t,
+                          generationStatus: 'failed' as const,
+                          error: '轮询失败: ' + (error as any).message
+                        };
+                      }
+                      return t;
+                    });
+                    return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                  }
+                  return n;
+                });
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`[恢复轮询] 恢复轮询失败:`, error);
+        }
+      }
+    };
+
+    // 延迟执行，确保节点完全加载
+    const timeoutId = setTimeout(restoreSoraPolling, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isLoaded]); // 移除 nodes 依赖，避免循环触发
+
   useEffect(() => {
       if (!isLoaded) return; 
       saveToStorage('assets', assetHistory);
@@ -1240,6 +1365,105 @@ export const App = () => {
                   return;
               }
 
+              // Action: Remove sensitive words from prompt
+              if (promptOverride?.startsWith('remove-sensitive-words:')) {
+                  const taskGroupIndex = parseInt(promptOverride.split(':')[1]);
+                  const taskGroup = taskGroups[taskGroupIndex];
+
+                  if (!taskGroup) {
+                      throw new Error(`未找到任务组 ${taskGroupIndex + 1}`);
+                  }
+
+                  if (!taskGroup.soraPrompt) {
+                      throw new Error('请先生成提示词');
+                  }
+
+                  console.log('[去敏感词] ===== 开始处理 =====');
+                  console.log('[去敏感词] 任务组:', taskGroup.taskNumber);
+                  console.log('[去敏感词] 原始提示词长度:', taskGroup.soraPrompt.length);
+
+                  // 设置正在去敏感词状态
+                  const updatedTaskGroups = [...taskGroups];
+                  updatedTaskGroups[taskGroupIndex] = {
+                      ...taskGroup,
+                      isRemovingSensitiveWords: true,
+                      removeSensitiveWordsProgress: '正在调用AI模型...'
+                  };
+                  handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
+
+                  try {
+                      // Import and call the remove sensitive words function
+                      console.log('[去敏感词] 正在调用 AI 模型...');
+                      const { removeSensitiveWords } = await import('./services/soraPromptBuilder');
+                      const cleanedPrompt = await removeSensitiveWords(taskGroup.soraPrompt);
+
+                      console.log('[去敏感词] AI 模型调用成功');
+                      console.log('[去敏感词] 优化后提示词长度:', cleanedPrompt.length);
+                      console.log('[去敏感词] ===== 处理完成 =====');
+
+                      // 计算优化统计
+                      const wordCountDiff = taskGroup.soraPrompt.length - cleanedPrompt.length;
+                      const successMessage = wordCountDiff > 0
+                          ? `✓ 已优化 ${wordCountDiff} 个字符`
+                          : `✓ 优化完成`;
+
+                      // Update the task group's prompt
+                      updatedTaskGroups[taskGroupIndex] = {
+                          ...taskGroup,
+                          soraPrompt: cleanedPrompt,
+                          promptModified: true,
+                          isRemovingSensitiveWords: false,
+                          removeSensitiveWordsProgress: undefined,
+                          removeSensitiveWordsSuccess: successMessage
+                      };
+
+                      handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
+
+                      // 3秒后清除成功消息
+                      setTimeout(() => {
+                          const currentTaskGroups = nodesRef.current.find(n => n.id === id)?.data?.taskGroups;
+                          if (currentTaskGroups) {
+                              const tg = currentTaskGroups[taskGroupIndex];
+                              if (tg && tg.removeSensitiveWordsSuccess) {
+                                  const clearedTaskGroups = [...currentTaskGroups];
+                                  clearedTaskGroups[taskGroupIndex] = {
+                                      ...tg,
+                                      removeSensitiveWordsSuccess: undefined
+                                  };
+                                  handleNodeUpdate(id, { taskGroups: clearedTaskGroups });
+                              }
+                          }
+                      }, 3000);
+                  } catch (error: any) {
+                      console.error('[去敏感词] ❌ 处理失败:', error);
+
+                      updatedTaskGroups[taskGroupIndex] = {
+                          ...taskGroup,
+                          isRemovingSensitiveWords: false,
+                          removeSensitiveWordsProgress: undefined,
+                          removeSensitiveWordsError: error.message
+                      };
+                      handleNodeUpdate(id, { taskGroups: updatedTaskGroups });
+
+                      // 5秒后清除错误消息
+                      setTimeout(() => {
+                          const currentTaskGroups = nodesRef.current.find(n => n.id === id)?.data?.taskGroups;
+                          if (currentTaskGroups) {
+                              const tg = currentTaskGroups[taskGroupIndex];
+                              if (tg && tg.removeSensitiveWordsError) {
+                                  const clearedTaskGroups = [...currentTaskGroups];
+                                  clearedTaskGroups[taskGroupIndex] = {
+                                      ...tg,
+                                      removeSensitiveWordsError: undefined
+                                  };
+                                  handleNodeUpdate(id, { taskGroups: clearedTaskGroups });
+                              }
+                          }
+                      }, 5000);
+                  }
+                  return;
+              }
+
               // Action: Generate video for a specific task group
               if (promptOverride?.startsWith('generate-video:')) {
                   const taskGroupIndex = parseInt(promptOverride.split(':')[1]);
@@ -1326,11 +1550,23 @@ export const App = () => {
                         setNodes(prev => [...prev, childNode]);
                         setConnections(prev => [...prev, newConnection]);
                     } else {
-                        // Generation failed
+                        // Generation failed - extract error details from result
+                        const rawError = result.violationReason ||
+                                          result._rawData?.error ||
+                                          result._rawData?.message ||
+                                          '视频生成失败';
+                        // 确保 errorMessage 是字符串
+                        const errorMessage = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
+
+                        console.error(`[SORA] 任务 ${taskGroup.taskNumber} 失败详情:`, {
+                            violationReason: result.violationReason,
+                            rawData: result._rawData
+                        });
+
                         updatedTaskGroups[taskGroupIndex] = {
                             ...taskGroup,
                             generationStatus: 'failed' as const,
-                            error: '生成失败，请重试'
+                            error: errorMessage
                         };
                     }
 
@@ -1506,8 +1742,8 @@ export const App = () => {
                   results.forEach((result, index) => {
                       const taskGroup = taskGroupsToGenerate[index];
                       if (result.status === 'completed' && result.videoUrl) {
-                          // 保存视频到服务器数据库
-                          saveVideoToDatabase(result.videoUrl, taskGroup.soraTaskId || taskGroup.id, taskGroup.taskNumber, taskGroup.soraPrompt);
+                          // 保存视频到服务器数据库，使用 result.taskId 而不是 taskGroup.soraTaskId
+                          saveVideoToDatabase(result.videoUrl, result.taskId, taskGroup.taskNumber, taskGroup.soraPrompt);
 
                           // Create child node
                           const childNodeId = `n-sora-child-${Date.now()}-${index}`;
@@ -1528,7 +1764,7 @@ export const App = () => {
                                   quality: result.quality,
                                   isCompliant: result.isCompliant,
                                   violationReason: result.violationReason,
-                                  soraTaskId: taskGroup.soraTaskId || taskGroup.id  // 用于下载
+                                  soraTaskId: result.taskId  // 使用 result.taskId 用于下载
                               },
                               inputs: [node.id]
                           };
@@ -1541,11 +1777,31 @@ export const App = () => {
                   const finalTaskGroups = taskGroups.map(tg => {
                       const result = results.get(tg.id);
                       if (result) {
+                          // 保留实际的进度值
+                          const finalProgress = result.status === 'completed' ? 100 : result.progress;
+
+                          // 提取错误信息
+                          let errorMessage = undefined;
+                          if (result.status === 'error') {
+                              const rawError = result.violationReason || result._rawData?.error || result._rawData?.message || '视频生成失败';
+                              // 确保 errorMessage 是字符串
+                              errorMessage = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
+                              console.error(`[SORA] 任务 ${tg.taskNumber} 失败详情:`, {
+                                  violationReason: result.violationReason,
+                                  rawData: result._rawData
+                              });
+                          }
+
                           return {
                               ...tg,
-                              generationStatus: result.status === 'completed' ? 'completed' as const : 'failed' as const,
-                              progress: result.status === 'completed' ? 100 : 0,
-                              error: result.status === 'error' ? (result.violationReason || '视频生成失败') : undefined,
+                              generationStatus: result.status === 'completed' ? 'completed' as const :
+                                              result.status === 'error' ? 'failed' as const :
+                                              tg.generationStatus,
+                              progress: finalProgress,
+                              error: errorMessage,
+                              // 保存视频URL到taskGroup中
+                              videoUrl: result.videoUrl,
+                              videoUrlWatermarked: result.videoUrlWatermarked,
                               videoMetadata: result.status === 'completed' ? {
                                   duration: parseFloat(result.duration || '0'),
                                   resolution: '1080p',
@@ -1617,11 +1873,28 @@ export const App = () => {
                       const finalTaskGroups = updatedTaskGroups.map((tg, index) => {
                           const result = results.find(r => r.taskGroupId === tg.id);
                           if (result) {
+                              // 保留实际的进度值
+                              const finalProgress = result.status === 'completed' ? 100 : result.progress;
+
+                              // 提取错误信息
+                              let errorMessage = undefined;
+                              if (result.status === 'error') {
+                                  const rawError = result.violationReason || result._rawData?.error || result._rawData?.message || '视频生成失败';
+                                  // 确保 errorMessage 是字符串
+                                  errorMessage = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
+                                  console.error(`[SORA] 重新生成任务 ${tg.taskNumber} 失败详情:`, {
+                                      violationReason: result.violationReason,
+                                      rawData: result._rawData
+                                  });
+                              }
+
                               return {
                                   ...tg,
-                                  generationStatus: result.status === 'completed' ? 'completed' as const : 'failed' as const,
-                                  progress: result.status === 'completed' ? 100 : 0,
-                                  error: result.status === 'error' ? (result.violationReason || '视频生成失败') : undefined,
+                                  generationStatus: result.status === 'completed' ? 'completed' as const :
+                                                      result.status === 'error' ? 'failed' as const :
+                                                      tg.generationStatus,
+                                  progress: finalProgress,
+                                  error: errorMessage,
                                   videoMetadata: result.status === 'completed' ? {
                                       duration: parseFloat(result.duration || '0'),
                                       resolution: '1080p',

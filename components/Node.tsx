@@ -1,6 +1,6 @@
 
 import { AppNode, NodeStatus, NodeType, StoryboardShot, CharacterProfile } from '../types';
-import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCircle, CheckCircle, Plus, Maximize2, Download, MoreHorizontal, Wand2, Scaling, FileSearch, Edit, Loader2, Layers, Trash2, X, Upload, Scissors, Film, MousePointerClick, Crop as CropIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripHorizontal, Link, Copy, Monitor, Music, Pause, Volume2, Mic2, BookOpen, ScrollText, Clapperboard, LayoutGrid, Box, User, Users, Save, RotateCcw, Eye, List, Sparkles, ZoomIn, ZoomOut, Minus, Circle, Square, Maximize, Move, RotateCw, TrendingUp, TrendingDown, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight, Palette, Grid, MoveHorizontal, ArrowUpDown, Database } from 'lucide-react';
+import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCircle, CheckCircle, Plus, Maximize2, Download, MoreHorizontal, Wand2, Scaling, FileSearch, Edit, Loader2, Layers, Trash2, X, Upload, Scissors, Film, MousePointerClick, Crop as CropIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripHorizontal, Link, Copy, Monitor, Music, Pause, Volume2, Mic2, BookOpen, ScrollText, Clapperboard, LayoutGrid, Box, User, Users, Save, RotateCcw, Eye, List, Sparkles, ZoomIn, ZoomOut, Minus, Circle, Square, Maximize, Move, RotateCw, TrendingUp, TrendingDown, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight, Palette, Grid, MoveHorizontal, ArrowUpDown, Database, ShieldAlert, ExternalLink } from 'lucide-react';
 import { VideoModeSelector, SceneDirectorOverlay } from './VideoNodeModules';
 import { PromptEditor } from './PromptEditor';
 import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
@@ -1174,6 +1174,12 @@ const NodeComponent: React.FC<NodeProps> = ({
                   storyboardRegeneratePage: currentPage // Regenerate entire page
               });
 
+              // 触发节点执行以开始重新生成
+              setTimeout(() => {
+                  console.log('[分镜图编辑] 触发节点重新生成');
+                  onAction(node.id);
+              }, 100);
+
               setViewMode('normal');
           };
 
@@ -2275,7 +2281,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                           tg.generationStatus === 'completed'
                                               ? 'bg-green-500/10 border-green-500/30'
                                               : tg.generationStatus === 'generating' || tg.generationStatus === 'uploading'
-                                              ? 'bg-blue-500/10 border-blue-500/30 animate-pulse'
+                                              ? 'bg-blue-500/10 border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.5)] animate-border-glow'
                                               : tg.generationStatus === 'failed'
                                               ? 'bg-red-500/10 border-red-500/30'
                                               : 'bg-white/5 border-white/10'
@@ -2358,8 +2364,28 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                   className="px-2 py-0.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-[9px] rounded font-medium transition-colors"
                                                   title="单独生成此任务组的视频"
                                               >
-                                                  生成视频
+                                                  {tg.generationStatus === 'generating' || tg.generationStatus === 'uploading' ? '生成中...' : '生成视频'}
                                               </button>
+
+                                              {/* Stop Generation Button (only show when generating) */}
+                                              {(tg.generationStatus === 'generating' || tg.generationStatus === 'uploading') && (
+                                                  <button
+                                                      onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          if (confirm('确定要停止生成吗？任务将被终止。')) {
+                                                              onUpdate(node.id, {
+                                                                  taskGroups: taskGroups.map((t: any, i: number) =>
+                                                                      i === index ? { ...t, generationStatus: 'failed' as const, error: '用户已停止生成' } : t
+                                                                  )
+                                                              });
+                                                          }
+                                                      }}
+                                                      className="px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white text-[9px] rounded font-medium transition-colors"
+                                                      title="停止生成此任务"
+                                                  >
+                                                      结束
+                                                  </button>
+                                              )}
 
                                               {/* Status Badge */}
                                               {tg.generationStatus === 'completed' && (
@@ -2369,7 +2395,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                               )}
                                               {tg.generationStatus === 'generating' && (
                                                   <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-[9px] rounded-full font-medium">
-                                                      生成中 {tg.progress || 0}%
+                                                      {tg.progress || 0}%
                                                   </span>
                                               )}
                                               {tg.generationStatus === 'failed' && (
@@ -2378,8 +2404,8 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                           失败
                                                       </span>
                                                       {tg.error && (
-                                                          <span className="text-[8px] text-red-400 max-w-[150px] truncate" title={tg.error}>
-                                                              {tg.error}
+                                                          <span className="text-[8px] text-red-400 max-w-[150px] truncate" title={typeof tg.error === 'object' ? JSON.stringify(tg.error) : String(tg.error)}>
+                                                              {typeof tg.error === 'object' ? JSON.stringify(tg.error) : String(tg.error)}
                                                           </span>
                                                       )}
                                                   </div>
@@ -2495,13 +2521,35 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                                           <Maximize2 size={12} className="text-white" />
                                                                       </button>
                                                                       <button
-                                                                          onClick={(e) => {
+                                                                          onClick={async (e) => {
                                                                               e.stopPropagation();
-                                                                              // Download image
-                                                                              const link = document.createElement('a');
-                                                                              link.href = tg.referenceImage;
-                                                                              link.download = `sora-reference-${node.id}-${tg.id}.png`;
-                                                                              link.click();
+                                                                              try {
+                                                                                  console.log('[合成图下载] 开始下载:', tg.referenceImage);
+
+                                                                                  // 使用fetch获取图片
+                                                                                  const response = await fetch(tg.referenceImage);
+                                                                                  if (!response.ok) throw new Error('下载失败');
+
+                                                                                  const blob = await response.blob();
+                                                                                  const url = URL.createObjectURL(blob);
+
+                                                                                  // 创建下载链接
+                                                                                  const link = document.createElement('a');
+                                                                                  link.href = url;
+                                                                                  link.download = `sora-reference-${tg.taskNumber}.png`;
+                                                                                  document.body.appendChild(link);
+                                                                                  link.click();
+                                                                                  document.body.removeChild(link);
+
+                                                                                  // 释放URL
+                                                                                  setTimeout(() => URL.revokeObjectURL(url), 100);
+
+                                                                                  console.log('[合成图下载] ✅ 下载成功');
+                                                                              } catch (error) {
+                                                                                  console.error('[合成图下载] ❌ 下载失败:', error);
+                                                                                  // 回退方案：在新标签页打开
+                                                                                  window.open(tg.referenceImage, '_blank');
+                                                                              }
                                                                           }}
                                                                           className="p-1.5 bg-black/60 rounded hover:bg-black/80 transition-colors"
                                                                           title="下载融合图"
@@ -2544,28 +2592,106 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                       >
                                                           <RefreshCw size={10} className="text-slate-400 hover:text-white" />
                                                       </button>
+                                                      <button
+                                                          onClick={() => onAction?.(node.id, `remove-sensitive-words:${index}`)}
+                                                          disabled={!tg.soraPrompt}
+                                                          className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                          title="去除敏感词（暴力、色情、版权、名人信息）"
+                                                      >
+                                                          <ShieldAlert size={10} className="text-orange-400 hover:text-white disabled:text-slate-600" />
+                                                      </button>
                                                   </div>
                                               </div>
 
                                               {tg.soraPrompt ? (
-                                                  <div className="px-2 pb-2">
-                                                      <textarea
-                                                          className="w-full p-2 bg-black/30 rounded border border-white/10 text-[9px] text-slate-300 font-mono resize-y min-h-[300px] max-h-[500px] overflow-y-auto custom-scrollbar focus:outline-none focus:border-cyan-500/30"
-                                                          defaultValue={tg.soraPrompt}
-                                                          onChange={(e) => {
-                                                              const updatedTaskGroups = [...node.data.taskGroups];
-                                                              const tgIndex = updatedTaskGroups.findIndex(t => t.id === tg.id);
-                                                              if (tgIndex !== -1) {
-                                                                  updatedTaskGroups[tgIndex].soraPrompt = e.target.value;
-                                                                  onUpdate(node.id, { taskGroups: updatedTaskGroups });
-                                                              }
-                                                          }}
-                                                          onMouseDown={(e) => e.stopPropagation()}
-                                                          onTouchStart={(e) => e.stopPropagation()}
-                                                          onPointerDown={(e) => e.stopPropagation()}
-                                                          placeholder="Sora 提示词..."
-                                                      />
-                                                  </div>
+                                                  <>
+                                                      <div className="px-2 pb-2">
+                                                          <textarea
+                                                              className="w-full p-2 bg-black/30 rounded border border-white/10 text-[9px] text-slate-300 font-mono resize-y min-h-[300px] max-h-[500px] overflow-y-auto custom-scrollbar focus:outline-none focus:border-cyan-500/30"
+                                                              defaultValue={tg.soraPrompt}
+                                                              onChange={(e) => {
+                                                                  const updatedTaskGroups = [...node.data.taskGroups];
+                                                                  const tgIndex = updatedTaskGroups.findIndex(t => t.id === tg.id);
+                                                                  if (tgIndex !== -1) {
+                                                                      updatedTaskGroups[tgIndex].soraPrompt = e.target.value;
+                                                                      onUpdate(node.id, { taskGroups: updatedTaskGroups });
+                                                                  }
+                                                              }}
+                                                              onMouseDown={(e) => e.stopPropagation()}
+                                                              onTouchStart={(e) => e.stopPropagation()}
+                                                              onPointerDown={(e) => e.stopPropagation()}
+                                                              placeholder="Sora 提示词..."
+                                                          />
+                                                      </div>
+
+                                                      {/* 去敏感词状态提示 */}
+                                                      {tg.isRemovingSensitiveWords && (
+                                                          <div className="px-2 pb-2">
+                                                              <div className="flex items-center gap-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded">
+                                                                  <Loader2 size={12} className="text-blue-400 animate-spin" />
+                                                                  <span className="text-[9px] text-blue-300">{tg.removeSensitiveWordsProgress || '正在处理...'}</span>
+                                                              </div>
+                                                          </div>
+                                                      )}
+
+                                                      {tg.removeSensitiveWordsSuccess && (
+                                                          <div className="px-2 pb-2">
+                                                              <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded">
+                                                                  <CheckCircle size={12} className="text-green-400" />
+                                                                  <span className="text-[9px] text-green-300">{tg.removeSensitiveWordsSuccess}</span>
+                                                              </div>
+                                                          </div>
+                                                      )}
+
+                                                      {tg.removeSensitiveWordsError && (
+                                                          <div className="px-2 pb-2">
+                                                              <div className="flex items-center gap-2 p-2 bg-red-500/10 border border-red-500/30 rounded">
+                                                                  <AlertCircle size={12} className="text-red-400" />
+                                                                  <span className="text-[9px] text-red-300">处理失败: {tg.removeSensitiveWordsError}</span>
+                                                              </div>
+                                                          </div>
+                                                      )}
+
+                                                      {/* 视频预览 - 仅在完成时显示 */}
+                                                      {tg.generationStatus === 'completed' && tg.videoUrl && (
+                                                          <div className="px-2 pb-2">
+                                                              <div className="space-y-1">
+                                                                  <div className="flex items-center justify-between">
+                                                                      <div className="flex items-center gap-1.5">
+                                                                          <Play size={10} className="text-green-400" />
+                                                                          <span className="text-[9px] font-bold text-green-300">生成完成</span>
+                                                                      </div>
+                                                                      {tg.videoMetadata?.duration && (
+                                                                          <span className="text-[8px] text-slate-500">
+                                                                              {tg.videoMetadata.duration.toFixed(1)}秒
+                                                                          </span>
+                                                                      )}
+                                                                  </div>
+                                                                  <div className="relative group/video rounded overflow-hidden border border-green-500/30 bg-black/40">
+                                                                      <video
+                                                                          src={tg.videoUrl}
+                                                                          className="w-full h-auto object-contain cursor-pointer"
+                                                                          controls
+                                                                          playsInline
+                                                                          preload="metadata"
+                                                                      />
+                                                                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/video:opacity-100 transition-opacity">
+                                                                          <button
+                                                                              onClick={(e) => {
+                                                                                  e.stopPropagation();
+                                                                                  window.open(tg.videoUrl, '_blank');
+                                                                              }}
+                                                                              className="p-1 bg-black/60 hover:bg-black/80 rounded text-white"
+                                                                              title="在新窗口打开"
+                                                                          >
+                                                                              <ExternalLink size={10} />
+                                                                          </button>
+                                                                      </div>
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                      )}
+                                                  </>
                                               ) : (
                                                   <div className="p-2 bg-black/20 rounded border border-dashed border-white/10 text-center">
                                                       <span className="text-[9px] text-slate-500">等待生成提示词</span>
@@ -2637,6 +2763,8 @@ const NodeComponent: React.FC<NodeProps> = ({
           const [durationValue, setDurationValue] = useState(0);
           const videoRef = useRef<HTMLVideoElement>(null);
           const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+          const [useLocalServer, setUseLocalServer] = useState(false);
+          const [videoError, setVideoError] = useState<string | null>(null);
 
           // 格式化时间显示
           const formatTime = (time: number) => {
@@ -2809,10 +2937,15 @@ const NodeComponent: React.FC<NodeProps> = ({
                                       // 设置视频元数据加载监听
                                       el.onloadedmetadata = () => {
                                           setDurationValue(el.duration);
+                                          setVideoError(null);
+                                      };
+                                      el.onerror = () => {
+                                          console.error('[视频播放] 加载失败:', videoUrl);
+                                          setVideoError('视频加载失败');
                                       };
                                   }
                               }}
-                              src={videoUrl}
+                              src={useLocalServer && soraTaskId ? `http://localhost:3001/api/videos/download/${soraTaskId}` : videoUrl}
                               className="w-full h-full object-cover bg-zinc-900"
                               loop
                               playsInline
@@ -2943,6 +3076,20 @@ const NodeComponent: React.FC<NodeProps> = ({
                                           <span className="px-2 py-0.5 bg-green-500/20 text-green-300 text-[9px] rounded-full">
                                               ✓ 已保存
                                           </span>
+                                      )}
+                                      {/* Local Server Toggle */}
+                                      {soraTaskId && (
+                                          <button
+                                              onClick={() => setUseLocalServer(!useLocalServer)}
+                                              className={`px-2 py-0.5 text-[9px] rounded-full transition-colors ${
+                                                  useLocalServer
+                                                      ? 'bg-blue-500/30 text-blue-300 border border-blue-400/30'
+                                                      : 'bg-white/10 text-white/50 border border-white/10'
+                                              }`}
+                                              title={useLocalServer ? '使用本地服务器（推荐）' : '使用原始URL（可能较慢）'}
+                                          >
+                                              {useLocalServer ? '🔄 本地服务器' : '☁️ 原始URL'}
+                                          </button>
                                       )}
                                   </div>
 
