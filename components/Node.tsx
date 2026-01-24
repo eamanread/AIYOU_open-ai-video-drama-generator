@@ -234,8 +234,13 @@ const arePropsEqual = (prev: NodeProps, next: NodeProps) => {
         'prompt', 'model', 'aspectRatio', 'resolution', 'count',
         'image', 'videoUri', 'croppedFrame', 'analysis',
         'scriptOutline', 'scriptGenre', 'scriptSetting', 'scriptVisualStyle',
-        'generatedEpisodes', 'storyboardGridImage', 'storyboardGridImages',
+        'scriptEpisodes', 'scriptDuration', // 剧本大纲滑块字段
+        'generatedEpisodes',
+        'episodeSplitCount', 'episodeModificationSuggestion', 'selectedChapter', // 剧本分集字段
+        'storyboardCount', 'storyboardDuration', 'storyboardStyle', 'storyboardGridType', 'storyboardShots', // 分镜图字段
+        'storyboardGridImage', 'storyboardGridImages',
         'extractedCharacterNames', 'characterConfigs', 'generatedCharacters',
+        'stylePrompt', 'negativePrompt', 'visualStyle', // 风格预设字段
         'error', 'progress', 'duration', 'quality', 'isCompliant',
         'isExpanded', 'videoMode', 'shotType', 'cameraAngle', 'cameraMovement',
         'selectedFields', 'dramaName', 'taskGroups'
