@@ -399,7 +399,7 @@ const EpisodeViewer = ({ episodes }: { episodes: { title: string, content: strin
 
     return (
         <div className="w-full h-full flex flex-col bg-[#1c1c1e] relative overflow-hidden">
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2" onWheel={(e) => e.stopPropagation()}>
                 {episodes.map((ep, idx) => {
                     const isExpanded = expandedIndex === idx;
                     return (
@@ -778,7 +778,7 @@ const NodeComponent: React.FC<NodeProps> = ({
 
               return (
                   <div className="w-full h-full flex flex-col overflow-hidden relative bg-[#1c1c1e]">
-                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4" onWheel={(e) => e.stopPropagation()}>
                           {shots.map((shot, idx) => (
                               <div key={shot.id} className="flex gap-3 p-3 rounded-xl bg-black/40 border border-white/5 hover:bg-black/60 transition-colors">
                                   {/* Shot Number Badge */}
@@ -1143,7 +1143,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                           </button>
                       </div>
 
-                      <div className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-black/20">
+                      <div className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-black/20" onWheel={(e) => e.stopPropagation()}>
                           <pre className="text-xs text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">{node.data.scriptOutline}</pre>
                       </div>
                   </div>
@@ -1308,7 +1308,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                   </div>
 
                                   {/* Shots List - Scrollable */}
-                                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3" onWheel={(e) => e.stopPropagation()}>
                                       {editingShots.map((shot, idx) => (
                                           <div key={idx} className="bg-black/40 border border-white/10 rounded-lg p-4">
                                               <div className="flex items-start gap-3">
@@ -1541,7 +1541,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col overflow-hidden relative bg-[#1c1c1e]">
                   {/* Content Area - Split Results List */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar" onWheel={(e) => e.stopPropagation()}>
                       {validShots.length > 0 ? (
                           <div className="p-4 space-y-3">
                               {validShots.map((shot) => (
@@ -1694,7 +1694,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col overflow-hidden relative">
                   {shots.length > 0 ? (
-                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4" onWheel={(e) => e.stopPropagation()}>
                           {shots.map((shot, idx) => (
                               <div key={shot.id} className="flex gap-3 p-2 rounded-xl bg-black/20 border border-white/5 group hover:bg-black/40 transition-colors">
                                   {/* Shot Image */}
@@ -1751,7 +1751,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col overflow-hidden relative">
                   {/* Top: List of Characters */}
-                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4" onWheel={(e) => e.stopPropagation()}>
                       {names.length === 0 && !isWorking ? (
                           <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
                               <User size={32} className="opacity-50" />
@@ -2010,7 +2010,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col overflow-hidden relative">
                   {/* Top: Generated Style Prompt */}
-                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3" onWheel={(e) => e.stopPropagation()}>
                       {!stylePrompt && !isWorking ? (
                           <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
                               <Palette size={32} className="opacity-50" />
@@ -2157,7 +2157,7 @@ const NodeComponent: React.FC<NodeProps> = ({
               <div className="w-full h-full flex flex-col bg-[#1c1c1e] relative overflow-hidden">
                   {/* Analysis results display area */}
                   {hasAnalysis ? (
-                      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" onWheel={(e) => e.stopPropagation()}>
                           {analysisFields.map(({ key, label, icon: Icon }) => {
                               const value = node.data[key as keyof typeof node.data] as string || '';
                               const isSelected = selectedFields.includes(key);
@@ -2259,7 +2259,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col bg-[#1c1c1e] relative overflow-hidden">
                   {/* Tags Grid */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4" onWheel={(e) => e.stopPropagation()}>
                       {Object.keys(refinedData).length > 0 ? (
                           Object.entries(refinedData).map(([category, tags]) => (
                               <div key={category} className="space-y-2">
@@ -2322,7 +2322,7 @@ const NodeComponent: React.FC<NodeProps> = ({
           return (
               <div className="w-full h-full flex flex-col bg-zinc-900 overflow-hidden">
                   {/* Task Groups List */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-3" onWheel={(e) => e.stopPropagation()}>
                       {taskGroups.length === 0 ? (
                           <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-600">
                               <Wand2 size={32} className="opacity-50" />
