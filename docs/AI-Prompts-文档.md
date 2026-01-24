@@ -1117,6 +1117,300 @@ Answer "NO" if the image contains ONLY the character illustration with no overla
 
 ---
 
+### 4.4 九宫格分镜图提示词
+
+**功能描述**：生成电影级九宫格/六宫格分镜图（3×3 或 2×3 网格布局）
+
+**使用场景**：短视频分镜制作、视觉规划、故事板设计
+
+**节点类型**：STORYBOARD_IMAGE (分镜图设计)
+
+**核心特性**：
+- 支持九宫格（3×3）和六宫格（2×3）两种布局
+- 自动保持角色一致性（连接角色节点时）
+- 自动保持场景一致性（同场景的面板视觉风格统一）
+- 支持多页分镜（超过9/6个分镜时自动分页）
+- 2K 高清分辨率输出
+
+#### 完整提示词模板
+
+**基础框架：**
+
+```
+Create a professional cinematic storyboard ${gridLayout} grid layout at 2K resolution.
+
+OVERALL IMAGE SPECS:
+- Output Aspect Ratio: ${outputAspectRatio} (${panelOrientation === '16:9' ? 'landscape' : 'portrait'})
+- Grid Layout: ${shotsPerGrid} panels arranged in ${gridLayout} formation
+- Each panel maintains ${panelOrientation} aspect ratio
+- Panel borders: EXACTLY 4 pixels wide black lines (NOT percentage-based, ABSOLUTE FIXED SIZE)
+- CRITICAL: All panel borders must be PERFECTLY UNIFORM - absolutely NO thickness variation allowed
+- Every dividing line must have EXACTLY the same 4-pixel width
+- NO variation in border thickness - all borders must be identical
+
+QUALITY STANDARDS:
+- Professional film industry storyboard quality
+- **2K HD resolution (2048 pixels wide base)**
+- High-detail illustration with sharp focus
+- Suitable for web and digital display
+- Crisp edges, no blurring or artifacts
+- Cinematic composition with proper framing
+- Expressive character poses and emotions
+- Dynamic lighting and shading
+- Clear foreground/background separation
+- CRITICAL: Maintain 100% visual style consistency across ALL panels
+- ALL characters must look identical across all panels (same face, hair, clothes, body type)
+- Same color palette, same art style, same lighting quality throughout
+
+CRITICAL NEGATIVE CONSTRAINTS (MUST FOLLOW):
+- NO text, NO speech bubbles, NO dialogue boxes
+- NO subtitles, NO captions, NO watermarks
+- NO letters, NO numbers, NO typography, NO panel numbers
+- NO markings or labels of any kind
+- NO variation in panel border thickness - all borders must be EXACTLY 4 pixels
+- NO inconsistent or varying border widths
+- NO style variations between panels
+- NO character appearance changes
+- Visual narrative without any text or numbers
+
+${stylePrefix ? `ART STYLE: ${stylePrefix}\n` : ''}
+
+${characterReferenceImages.length > 0 ? `CHARACTER CONSISTENCY (CRITICAL):
+⚠️ MANDATORY: You MUST use the provided character reference images as the ONLY source of truth for character appearance.
+
+Characters in this storyboard: ${characterNames.length > 0 ? characterNames.join(', ') : 'See reference images'}
+Number of character references provided: ${characterReferenceImages.length}
+
+REQUIREMENTS:
+- ALL characters in EVERY panel must look EXACTLY THE SAME as in the reference images
+- Face: SAME facial features, eye shape, nose, mouth, skin tone, expression style
+- Hair: IDENTICAL hairstyle, hair color, hair texture, hair length
+- Body: SAME body proportions, height, build, posture
+- Clothing: EXACT SAME clothes, accessories, shoes, colors, fabrics
+- Skin: IDENTICAL skin texture, skin tone, skin quality
+- ZERO tolerance for character appearance changes across panels
+- DO NOT generate random or different-looking characters
+- Treat these reference images as sacred - match them PERFECTLY in every detail
+
+This is NON-NEGOTIABLE: Character consistency across all panels is mandatory.
+` : ''}
+
+${sceneConsistencySection}
+
+PANEL BREAKDOWN (each panel MUST be visually distinct):
+${panelDescriptions}
+
+COMPOSITION REQUIREMENTS:
+- Each panel MUST depict a DIFFERENT scene/angle/moment
+- NO repetition of content between panels
+- Each panel should have unique visual elements
+- Maintain narrative flow across the ${gridLayout} grid
+- Professional color grading throughout
+- Environmental details and props clearly visible
+```
+
+#### 参数说明
+
+**动态变量：**
+
+| 变量名 | 说明 | 示例值 |
+|--------|------|--------|
+| `${gridLayout}` | 网格布局类型 | `"3x3"` 或 `"2x3"` |
+| `${shotsPerGrid}` | 每页分镜数量 | `9` 或 `6` |
+| `${outputAspectRatio}` | 输出宽高比 | `"16:9"` 或 `"4:3"` |
+| `${panelOrientation}` | 面板方向 | `"16:9"` (横屏) 或 `"9:16"` (竖屏) |
+| `${stylePrefix}` | 风格前缀（3D/REAL/ANIME） | 见下方风格说明 |
+| `${sceneConsistencySection}` | 场景一致性要求（自动生成） | 见下方说明 |
+| `${panelDescriptions}` | 面板详细描述（自动生成） | 见下方说明 |
+
+#### 角色一致性模块
+
+当连接了 CHARACTER_NODE（角色节点）时，会自动插入此模块：
+
+```
+CHARACTER CONSISTENCY (CRITICAL):
+⚠️ MANDATORY: You MUST use the provided character reference images as the ONLY source of truth for character appearance.
+
+Characters in this storyboard: ${characterNames.join(', ')}
+Number of character references provided: ${characterReferenceImages.length}
+
+REQUIREMENTS:
+- ALL characters in EVERY panel must look EXACTLY THE SAME as in the reference images
+- Face: SAME facial features, eye shape, nose, mouth, skin tone, expression style
+- Hair: IDENTICAL hairstyle, hair color, hair texture, hair length
+- Body: SAME body proportions, height, build, posture
+- Clothing: EXACT SAME clothes, accessories, shoes, colors, fabrics
+- Skin: IDENTICAL skin texture, skin tone, skin quality
+- ZERO tolerance for character appearance changes across panels
+- DO NOT generate random or different-looking characters
+- Treat these reference images as sacred - match them PERFECTLY in every detail
+```
+
+**功能：**
+- 从上游角色节点获取角色参考图片（三视图或表情图）
+- 要求 AI 使用参考图片作为角色外观的唯一真相源
+- 确保所有面板中的角色外观 100% 一致
+
+#### 场景一致性模块
+
+当多个分镜属于同一场景时，自动生成此模块：
+
+```
+SCENE CONSISTENCY REQUIREMENTS:
+CRITICAL: Panels belonging to the same scene MUST maintain perfect visual consistency:
+- Scene "古代街道" (Panels 1, 3, 5): 石板路、古建筑、灯笼...
+- Scene "宫廷内殿" (Panels 2, 4, 6): 金碧辉煌、龙椅、柱子...
+
+For each scene above:
+- Environment style, architecture, and props must be IDENTICAL across all panels of that scene
+- Lighting quality, color temperature, and shadow direction must be CONSISTENT within the same scene
+- Atmosphere, mood, and environmental effects must match across panels of the same scene
+- Background elements, textures, and materials must be the same for the same scene
+- Time of day and weather conditions must be consistent within each scene
+
+This ensures visual continuity - multiple panels showing the same scene should look like different camera angles of the SAME location, not different places.
+```
+
+**功能：**
+- 自动识别同一场景的分镜
+- 要求同一场景的所有面板保持环境、光照、氛围的视觉一致性
+- 确保同一场景看起来像同一地点的不同角度，而非不同地点
+
+#### 面板描述生成
+
+每个面板的描述由 `buildDetailedShotPrompt` 函数自动生成，包含：
+
+**1. 景别映射（Shot Size）：**
+
+| 中文 | 英文 Prompt |
+|------|-------------|
+| 大远景 | `extreme long shot, vast environment, figures small like ants` |
+| 远景 | `long shot, small figure visible, action and environment` |
+| 全景 | `full shot, entire body visible, head to toe` |
+| 中景 | `medium shot, waist-up composition, social distance` |
+| 中近景 | `medium close-up shot, chest-up, focus on emotion` |
+| 近景 | `close shot, neck and above, intimate examination` |
+| 特写 | `close-up shot, face only, soul window, intense impact` |
+| 大特写 | `extreme close-up shot, partial detail, microscopic view` |
+
+**2. 拍摄角度映射（Camera Angle）：**
+
+| 中文 | 英文 Prompt |
+|------|-------------|
+| 视平 | `eye-level angle, neutral and natural perspective` |
+| 高位俯拍 | `high angle shot, looking down at subject, makes them appear vulnerable` |
+| 低位仰拍 | `low angle shot, looking up at subject, makes them appear powerful` |
+| 斜拍 | `dutch angle, tilted horizon, creates psychological unease` |
+| 越肩 | `over the shoulder shot, emphasizes relationship and space` |
+| 鸟瞰 | `bird's eye view, top-down 90-degree, god-like perspective` |
+
+**3. 运镜方式映射（Camera Movement）：**
+
+| 中文 | 英文 Prompt |
+|------|-------------|
+| 固定 | `static camera, tripod, no movement` |
+| 横移 | `truck, sideways camera movement, tracking action` |
+| 俯仰 | `tilt, vertical camera rotation, up/down pan` |
+| 横摇 | `pan, horizontal camera rotation, left/right sweep` |
+| 升降 | `boom or crane, vertical camera movement, reveal` |
+| 轨道推拉 | `dolly, physical camera movement toward/away, depth change` |
+| 变焦推拉 | `zoom, optical lens zoom, focal length change` |
+| 正跟随 | `following, behind subject tracking movement` |
+| 倒跟随 | `leading, in front of subject, walking backwards` |
+| 环绕 | `arc or orbit, circular movement around subject` |
+| 手持晃动 | `handheld, shaky camera, documentary feel` |
+
+**4. 完整面板描述示例：**
+
+```
+Panel 1: 青年男子手持长剑，站在古殿中央，眼神坚定. full shot, entire body visible, head to toe. environment: 金碧辉煌的宫廷大殿，龙柱，石板地. [Unique Panel ID: 1]
+
+Panel 2: 守卫从侧门冲入，盔甲反光. medium shot, waist-up composition, social distance. low angle shot, looking up at subject, makes them appear powerful. environment: 金碧辉煌的宫廷大殿，龙柱，石板地. [Unique Panel ID: 2]
+
+Panel 3: 两人激烈对峙，剑拔弩张. close-up shot, face only, soul window, intense impact. dutch angle, tilted horizon, creates psychological unease. [Unique Panel ID: 3]
+```
+
+#### 风格说明
+
+根据上游 SCRIPT_PLANNER（剧本大纲）节点的 `scriptVisualStyle` 设置：
+
+**3D 动漫风格（默认）：**
+
+```
+Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture (not overly realistic), flowing fabric clothing, individual hair strands, soft ethereal lighting, cinematic rim lighting with cool blue tones, otherworldly gaze, elegant and cold demeanor
+```
+
+**REAL 真人风格：**
+
+```
+Professional portrait photography, photorealistic human, cinematic photography, professional headshot, DSLR quality, 85mm lens, sharp focus, realistic skin texture, visible pores, natural skin imperfections, subsurface scattering, natural lighting, studio portrait lighting, softbox lighting, rim light, golden hour
+```
+
+**ANIME 2D 动漫风格：**
+
+```
+Anime character, anime style, 2D anime art, manga illustration style, clean linework, crisp outlines, manga art style, detailed illustration, soft lighting, rim light, vibrant colors, cel shading lighting, flat shading
+```
+
+#### 使用流程
+
+1. **创建节点**：
+   - 添加 `SCRIPT_EPISODE`（剧本分集）节点
+   - 添加 `CHARACTER_NODE`（角色设计）节点（可选）
+   - 添加 `STYLE_PRESET`（风格预设）节点（可选）
+   - 添加 `STORYBOARD_IMAGE`（分镜图设计）节点
+
+2. **连接节点**：
+   - 将 `SCRIPT_EPISODE` 连接到 `STORYBOARD_IMAGE`（提供分镜脚本）
+   - 将 `CHARACTER_NODE` 连接到 `STORYBOARD_IMAGE`（提供角色参考，可选）
+   - 将 `STYLE_PRESET` 连接到 `STORYBOARD_IMAGE`（提供风格，可选）
+
+3. **配置参数**：
+   - 选择网格布局：九宫格（3×3）或六宫格（2×3）
+   - 配置风格（如果不连接 STYLE_PRESET）
+   - 点击"生成九宫格分镜图"
+
+4. **自动处理**：
+   - 系统自动提取分镜信息
+   - 自动匹配角色参考图片
+   - 自动生成场景一致性要求
+   - 自动计算所需页数（超过 9/6 个分镜时分页）
+   - 逐页生成分镜图
+
+#### 多页分镜支持
+
+当分镜数量超过每页容量时：
+- 九宫格：每页 9 个分镜
+- 六宫格：每页 6 个分镜
+
+最后一页如果不足，会自动填充空白面板：
+```
+Panel 7: (正常分镜描述)
+Panel 8: (正常分镜描述)
+Panel 9: [BLANK] - Empty panel at end of storyboard
+```
+
+#### 技术实现
+
+**代码位置**：`App.tsx` 第 2999-3271 行
+
+**关键函数**：
+- `buildDetailedShotPrompt()` - 构建单个分镜的详细提示词
+- `generateGridPage()` - 生成单页分镜图
+- `getUpstreamStyleContext()` - 获取上游风格设置
+- `getVisualPromptPrefix()` - 获取风格提示词前缀
+
+**输出分辨率：**
+
+| 网格类型 | 面板方向 | 输出宽高比 | 分辨率 |
+|----------|----------|------------|--------|
+| 九宫格 (3×3) | 横屏 (16:9) | 16:9 | 3840×2160 |
+| 九宫格 (3×3) | 竖屏 (9:16) | 9:16 | 2160×3840 |
+| 六宫格 (2×3) | 横屏 (16:9) | 4:3 | 3840×2880 |
+| 六宫格 (2×3) | 竖屏 (9:16) | 3:4 | 2880×3840 |
+
+---
+
 ## 5. 分镜增强相关 Prompts
 
 ### 5.1 分镜参数优化提示词
