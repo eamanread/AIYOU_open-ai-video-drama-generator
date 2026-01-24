@@ -1727,18 +1727,200 @@ Only output the optimized video generation prompt, do not add explanations.
 
 ---
 
+### 7.2 图像恢复提示词
+
+**功能描述**：将低分辨率裁剪图像恢复并放大到 4K 高清质量
+
+**使用场景**：SceneDirector 视频生成模式、局部分镜高清化
+
+**节点类型**：VIDEO_GENERATOR (视频生成节点 - SceneDirector 模式)
+
+**核心功能：**
+- 严格保持原始构图和相机角度
+- 修复模糊和噪点
+- 添加皮肤纹理和真实细节
+- 防止 AI 产生幻觉和额外内容
+
+#### 完整提示词
+
+```
+CRITICAL IMAGE RESTORATION TASK:
+1. Input is a low-resolution crop. Your goal is to UPSCALE and RESTORE it to 4K quality.
+2. STRICTLY PRESERVE the original composition, character pose, camera angle, and object placement.
+3. DO NOT reframe, DO NOT zoom out, DO NOT change the perspective.
+4. Fix blurriness and noise. Add skin texture and realistic details matching the description: "${prompt}".
+5. Ensure the style matches: "${upstreamContextStyle || 'Cinematic, High Fidelity'}".
+6. Output a single, high-quality image that looks exactly like the input but sharper.
+
+NEGATIVE CONSTRAINTS:
+- DO NOT add new people, characters, or subjects.
+- The number of people MUST remain exactly the same as the input.
+- DO NOT hallucinate extra limbs, faces, or background figures.
+
+STRUCTURAL INTEGRITY:
+- Treat the input image as the absolute ground truth for composition.
+- Only enhance existing pixels, do not invent new geometry.
+```
+
+#### 中文版说明
+
+```
+关键图像恢复任务：
+1. 输入是低分辨率裁剪图像。你的目标是将它放大并恢复到 4K 质量。
+2. 严格保持原始构图、角色姿势、相机角度和物体位置。
+3. 不要重新构图，不要拉远镜头，不要改变视角。
+4. 修复模糊和噪点。添加皮肤纹理和真实细节，匹配描述："${prompt}"。
+5. 确保风格匹配："${upstreamContextStyle || '电影级，高保真'}"。
+6. 输出单张高质量图像，看起来与输入完全一致但更清晰。
+
+负面约束：
+- 不要添加新的人物、角色或主体。
+- 人物数量必须与输入完全一致。
+- 不要产生幻觉，添加额外的肢体、脸部或背景人物。
+
+结构完整性：
+- 将输入图像视为构图的绝对真相。
+- 只增强现有像素，不要发明新的几何结构。
+```
+
+#### 参数说明
+
+**动态变量：**
+
+| 变量名 | 说明 | 示例值 |
+|--------|------|--------|
+| `${prompt}` | 用户提供的场景描述 | "青年男子手持长剑，眼神坚定" |
+| `${upstreamContextStyle}` | 上游视频的视觉风格分析 | "Cinematic, High Fidelity" 或 "电影级，高保真" |
+
+#### 使用场景
+
+**1. SceneDirector 模式（局部分镜）：**
+
+当用户在视频中框选局部区域生成新视频时：
+- 用户框选区域 → 生成低分辨率裁剪图像
+- 使用本提示词恢复到 4K 高清
+- 使用高清图像作为 Veo 视频生成的输入
+- 确保生成的视频质量高、细节丰富
+
+**2. 工作流程：**
+
+```
+原视频 (1080p)
+    ↓
+用户框选局部区域
+    ↓
+低分辨率裁剪 (如 270p)
+    ↓
+图像恢复提示词 (本 Prompt)
+    ↓
+4K 高清恢复图像 (3840x2160)
+    ↓
+Veo 视频生成
+    ↓
+高质量局部视频
+```
+
+#### 关键约束
+
+**构图保持（最重要）：**
+- ❌ 不允许重新构图
+- ❌ 不允许拉远镜头
+- ❌ 不允许改变透视
+- ✅ 必须保持原始构图
+- ✅ 必须保持原始相机角度
+- ✅ 必须保持物体位置
+
+**防止幻觉：**
+- ❌ 不能添加新人物
+- ❌ 不能添加额外肢体
+- ❌ 不能添加背景人物
+- ✅ 人物数量必须与输入一致
+
+**增强策略：**
+- ✅ 增强现有像素质量
+- ✅ 添加皮肤纹理细节
+- ✅ 修复模糊和噪点
+- ✅ 匹配用户描述的场景
+- ✅ 匹配上游视频风格
+
+#### 技术实现
+
+**代码位置**：`services/videoStrategies.ts` 第 163-180 行
+
+**使用示例：**
+
+```typescript
+const restorationPrompt = `
+CRITICAL IMAGE RESTORATION TASK:
+1. Input is a low-resolution crop. Your goal is to UPSCALE and RESTORE it to 4K quality.
+2. STRICTLY PRESERVE the original composition, character pose, camera angle, and object placement.
+3. DO NOT reframe, DO NOT zoom out, DO NOT change the perspective.
+4. Fix blurriness and noise. Add skin texture and realistic details matching the description: "${prompt}".
+5. Ensure the style matches: "${upstreamContextStyle || 'Cinematic, High Fidelity'}".
+6. Output a single, high-quality image that looks exactly like the input but sharper.
+
+NEGATIVE CONSTRAINTS:
+- DO NOT add new people, characters, or subjects.
+- The number of people MUST remain exactly the same as the input.
+- DO NOT hallucinate extra limbs, faces, or background figures.
+
+STRUCTURAL INTEGRITY:
+- Treat the input image as the absolute ground truth for composition.
+- Only enhance existing pixels, do not invent new geometry.
+`;
+
+const restoredImages = await generateImageFromText(
+    restorationPrompt,
+    getUserDefaultModel('image'),
+    [inputImageForGeneration],
+    { aspectRatio: node.data.aspectRatio || '16:9', count: 1 }
+);
+```
+
+#### 输入输出规格
+
+| 项目 | 规格 |
+|------|------|
+| 输入分辨率 | 任意（通常为 270p - 720p 的裁剪图像） |
+| 输出分辨率 | 4K (3840×2160 或 2880×3840) |
+| 输出数量 | 1 张 |
+| 宽高比 | 保持输入宽高比 |
+| 处理时间 | 通常 5-15 秒（取决于模型） |
+
+#### 与其他提示词的区别
+
+| 提示词 | 用途 | 构图要求 | 输出数量 |
+|--------|------|----------|----------|
+| 九宫格分镜图 | 从文本生成多面板分镜 | 自由创建 | 1 张（包含多个面板） |
+| 九宫格表情 | 从角色档案生成表情图 | 3×3 网格 | 1 张（包含9个表情） |
+| 三视图 | 从角色档案生成三视图 | 正/侧/后视图 | 1 张（包含3个角度） |
+| **图像恢复** | **放大低分辨率裁剪** | **严格保持原图** | **1 张（单张高清）** |
+
+#### 常见问题
+
+**Q: 为什么要严格保持构图？**
+A: 在 SceneDirector 模式中，用户框选的局部区域代表了他们想要的精确构图。如果 AI 改变构图，生成的视频将与用户期望不符。
+
+**Q: 如何防止 AI 添加额外人物？**
+A: 通过明确的负面约束（NEGATIVE CONSTRAINTS）和结构完整性（STRUCTURAL INTEGRITY）要求，强调人物数量必须一致。
+
+**Q: 可以用于人物以外的主体吗？**
+A: 可以，提示词适用于任何需要高清恢复的主体（风景、物体、建筑等），只需调整 `${prompt}` 描述即可。
+
+---
+
 ## 📚 总结
 
-本文档整理了哎呦漫剧生成项目中使用的所有 AI Prompts，涵盖 **7 大类、20+ 个核心 Prompt**：
+本文档整理了哎呦漫剧生成项目中使用的所有 AI Prompts，涵盖 **7 大类、25+ 个核心 Prompt**：
 
 ### 核心类别
-1. **角色生成**：角色提取、档案生成、图像生成
-2. **剧本创作**：大纲规划、分集创作、分镜生成
-3. **视频生成**：Sora 提示词、敏感词过滤
-4. **图像生成**：表情参考表、三视图、文字检测
-5. **分镜增强**：智能参数选择
-6. **风格预设**：场景/人物风格模板
-7. **视频策略**：提示词编排
+1. **角色生成**（5个）：角色提取、档案生成、配角档案、九宫格表情、三视图
+2. **剧本创作**（4个）：大纲规划、分集创作、电影级分镜、详细分镜
+3. **视频生成**（2个）：Sora 提示词构建、敏感词过滤
+4. **图像生成**（4个）：九宫格表情、三视图、文本检测、九宫格分镜图
+5. **分镜增强**（1个）：智能参数选择
+6. **风格预设**（2个）：场景风格、人物风格
+7. **视频策略**（2个）：提示词编排、图像恢复
 
 ### 关键特性
 - ✅ **中英文双语**：所有提示词都提供中文和英文版本，完全语言分离
