@@ -22,9 +22,10 @@ import { getSoraModelById } from './services/soraConfigService';
 import { generateImageWithFallback } from './services/geminiServiceWithFallback';
 import { handleCharacterAction as handleCharacterActionNew } from './services/characterActionHandler';
 import { getGenerationStrategy } from './services/videoStrategies';
-import { saveToStorage, loadFromStorage } from './services/storage';
+import { saveToStorage, loadFromStorage } from './services/storage_old';
 import { getUserPriority, ModelCategory, getDefaultModel, getUserDefaultModel } from './services/modelConfig';
 import { saveImageNodeOutput, saveVideoNodeOutput, saveAudioNodeOutput, saveStoryboardGridOutput } from './utils/storageHelper';
+import { checkImageNodeCache, checkVideoNodeCache, checkAudioNodeCache } from './utils/cacheChecker';
 import { executeWithFallback } from './services/modelFallback';
 import { validateConnection, canExecuteNode } from './utils/nodeValidation';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -279,6 +280,7 @@ export const App = () => {
   const [resizeStartPos, setResizeStartPos] = useState<{x: number, y: number} | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [contextMenuTarget, setContextMenuTarget] = useState<any>(null);
+  const [storageReconnectNeeded, setStorageReconnectNeeded] = useState<boolean>(false);
   const [expandedMedia, setExpandedMedia] = useState<any>(null);
   const [croppingNodeId, setCroppingNodeId] = useState<string | null>(null);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -367,6 +369,23 @@ export const App = () => {
           }
       };
       loadData();
+
+      // ✅ 检查本地存储配置（仅记录日志，不自动连接）
+      const checkStorageConfig = () => {
+          try {
+              const savedConfig = JSON.parse(localStorage.getItem('fileStorageConfig') || '{}');
+              if (savedConfig.enabled && savedConfig.rootPath) {
+                  console.log('[App] 检测到已配置的存储:', savedConfig.rootPath);
+                  console.log('[App] 💡 提示：请通过设置面板重新连接工作文件夹以访问缓存');
+                  // 可以在界面上显示一个提示徽章
+                  setStorageReconnectNeeded(true);
+              }
+          } catch (error) {
+              console.error('[App] 检查存储配置失败:', error);
+          }
+      };
+
+      checkStorageConfig();
   }, []);
 
   // 恢复Sora视频生成轮询（刷新页面后）
@@ -406,6 +425,85 @@ export const App = () => {
             console.log(`[恢复轮询] 恢复任务组 ${tg.taskNumber} 的轮询，taskId: ${tg.soraTaskId}`);
 
             try {
+              // 先查询一次当前状态，检查是否应该恢复轮询
+              const initialResult = await checkSoraTaskStatus(
+                tg.soraTaskId,
+                undefined,
+                { nodeId: node.id, nodeType: node.type }
+              );
+
+              // 检查任务是否已经太旧或处于异常状态
+              const now = Math.floor(Date.now() / 1000);
+              const taskCreatedAt = initialResult.created_at || now;
+              const taskAge = now - taskCreatedAt;
+
+              // 如果任务超过10分钟还在排队或处理中，不再恢复轮询
+              if (taskAge > 600 && (initialResult.status === 'queued' || initialResult.status === 'processing')) {
+                console.warn(`[恢复轮询] 任务 ${tg.taskNumber} 已经过旧(${Math.floor(taskAge / 60)}分钟)，状态仍为 ${initialResult.status}，停止轮询`);
+                // 标记为失败
+                setNodes(prevNodes => {
+                  return prevNodes.map(n => {
+                    if (n.id === node.id) {
+                      const updatedTaskGroups = n.data.taskGroups.map((t: any) => {
+                        if (t.id === tg.id) {
+                          return {
+                            ...t,
+                            generationStatus: 'failed' as const,
+                            error: `任务超时(${Math.floor(taskAge / 60)}分钟，状态: ${initialResult.status})`
+                          };
+                        }
+                        return t;
+                      });
+                      return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                    }
+                    return n;
+                  });
+                });
+                continue;
+              }
+
+              // 如果任务已经失败或完成，直接更新状态
+              if (initialResult.status === 'error' || initialResult.status === 'failed' || initialResult.status === 'FAILED') {
+                console.log(`[恢复轮询] 任务 ${tg.taskNumber} 已失败，不再轮询`);
+                setNodes(prevNodes => {
+                  return prevNodes.map(n => {
+                    if (n.id === node.id) {
+                      const updatedTaskGroups = n.data.taskGroups.map((t: any) => {
+                        if (t.id === tg.id) {
+                          return { ...t, generationStatus: 'failed' as const, error: '任务失败' };
+                        }
+                        return t;
+                      });
+                      return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                    }
+                    return n;
+                  });
+                });
+                continue;
+              }
+
+              if (initialResult.status === 'completed' || initialResult.status === 'succeeded' || initialResult.status === 'success') {
+                console.log(`[恢复轮询] 任务 ${tg.taskNumber} 已完成，不再轮询`);
+                setNodes(prevNodes => {
+                  return prevNodes.map(n => {
+                    if (n.id === node.id) {
+                      const updatedTaskGroups = n.data.taskGroups.map((t: any) => {
+                        if (t.id === tg.id) {
+                          return { ...t, generationStatus: 'completed' as const, videoUri: initialResult.videoUrl };
+                        }
+                        return t;
+                      });
+                      return { ...n, data: { ...n.data, taskGroups: updatedTaskGroups } };
+                    }
+                    return n;
+                  });
+                });
+                continue;
+              }
+
+              // 任务仍在进行中，开始轮询
+              console.log(`[恢复轮询] 任务 ${tg.taskNumber} 当前状态: ${initialResult.status}，开始轮询`);
+
               // 使用轮询函数持续查询状态
               const result = await pollSoraTaskUntilComplete(
                 tg.soraTaskId,
@@ -1986,6 +2084,32 @@ export const App = () => {
                           // 不保存到IndexedDB，直接使用 Sora URL
                           saveVideoToDatabase(result.videoUrl, result.taskId, taskGroup.taskNumber, taskGroup.soraPrompt);
 
+                          // 🚀 保存视频到本地文件系统
+                          try {
+                              const { getFileStorageService } = await import('./services/storage/index');
+                              const service = getFileStorageService();
+
+                              if (service.isEnabled()) {
+                                  // 使用 prefix 参数添加任务组 ID，便于后续查找
+                                  const saveResult = await service.saveFile(
+                                      'default',
+                                      id, // 使用父节点 ID
+                                      'SORA_VIDEO_GENERATOR',
+                                      result.videoUrl,
+                                      {
+                                          updateMetadata: true,
+                                          prefix: `sora-video-${taskGroup.id}` // 文件名前缀
+                                      }
+                                  );
+
+                                  if (saveResult.success) {
+                                      console.log('[Sora2] ✅ 视频已保存到本地:', taskGroup.taskNumber, saveResult.relativePath);
+                                  }
+                              }
+                          } catch (error) {
+                              console.error('[Sora2] 保存视频到本地失败:', error);
+                          }
+
                           // Create child node
                           const childNodeId = `n-sora-child-${Date.now()}-${index}`;
                           const childNode: AppNode = {
@@ -2415,10 +2539,16 @@ export const App = () => {
               for (const name of names) {
                   const config = configs[name] || { method: 'AI_AUTO' };
 
-                  // Skip if already generated successfully or is currently being processed
+                  // Skip if already generated successfully
                   const existingChar = newGeneratedChars.find(c => c.name === name);
-                  if (existingChar && (existingChar.status === 'SUCCESS' || existingChar.isGeneratingExpression || existingChar.isGeneratingThreeView)) {
-                      console.log('[CHARACTER_NODE] Skipping character:', name, 'status:', existingChar.status);
+                  if (existingChar && existingChar.status === 'SUCCESS') {
+                      console.log('[CHARACTER_NODE] Skipping completed character:', name, 'status:', existingChar.status);
+                      continue;
+                  }
+
+                  // Skip if currently processing expressions or three views
+                  if (existingChar && (existingChar.isGeneratingExpression || existingChar.isGeneratingThreeView)) {
+                      console.log('[CHARACTER_NODE] Skipping character (generating sub-items):', name, 'status:', existingChar.status);
                       continue;
                   }
 
@@ -2428,13 +2558,14 @@ export const App = () => {
                       continue;
                   }
 
-                  // Only regenerate if explicitly in ERROR state or doesn't exist
-                  if (existingChar && existingChar.status === 'ERROR') {
+                  // 对于 GENERATING、ERROR 或其他非成功状态，允许重新生成
+                  if (existingChar && existingChar.status === 'GENERATING') {
+                      console.log('[CHARACTER_NODE] Regenerating stuck character (was in GENERATING state):', name);
+                  } else if (existingChar && existingChar.status === 'ERROR') {
                       console.log('[CHARACTER_NODE] Regenerating ERROR character:', name);
                   } else if (existingChar && existingChar.status !== 'PENDING') {
-                      // Skip if character exists and is not in an error state
-                      console.log('[CHARACTER_NODE] Skipping existing character:', name, 'status:', existingChar.status);
-                      continue;
+                      // 其他状态也允许重新生成，避免卡住
+                      console.log('[CHARACTER_NODE] Regenerating character with status:', name, existingChar.status);
                   }
 
                   let charProfile = existingChar;
@@ -2499,20 +2630,19 @@ export const App = () => {
                       console.log('[CHARACTER_NODE] Using GENERATE_ALL for main character:', name);
 
                       try {
-                          // 调用 handleGenerateActionNew，它会处理完整的生成流程
+                          console.log('[CHARACTER_NODE] About to call handleCharacterActionNew for:', name);
+
+                          // 调用 handleCharacterActionNew，它会处理完整的生成流程
                           await handleCharacterActionNew(
-                              id,
-                              'GENERATE_ALL',
-                              name,
-                              (nodeId: string, updates: any) => {
-                                  // 更新 generatedCharacters
-                                  const updatedNode = nodesRef.current.find(n => n.id === nodeId);
-                                  if (updatedNode?.data?.generatedCharacters) {
-                                      handleNodeUpdate(nodeId, { generatedCharacters: updatedNode.data.generatedCharacters });
-                                  }
-                              },
-                              nodesRef.current
+                              id,                  // nodeId
+                              'GENERATE_ALL',      // action
+                              name,                // charName
+                              node,                // node ← 必须传递当前节点！
+                              nodesRef.current,    // allNodes
+                              handleNodeUpdate     // onNodeUpdate ← 必须传递更新函数！
                           );
+
+                          console.log('[CHARACTER_NODE] handleCharacterActionNew returned successfully for:', name);
 
                           // 更新状态为生成完成
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
@@ -2520,14 +2650,25 @@ export const App = () => {
                               const updatedChar = nodesRef.current.find(n => n.id === id)?.data?.generatedCharacters?.find(c => c.name === name);
                               if (updatedChar) {
                                   newGeneratedChars[idx] = updatedChar;
+                                  console.log('[CHARACTER_NODE] Updated character from node:', name, 'status:', updatedChar.status);
+                              } else {
+                                  console.warn('[CHARACTER_NODE] Could not find updated character in node:', name);
                               }
                           }
 
                           console.log('[CHARACTER_NODE] GENERATE_ALL completed for:', name);
                       } catch (e: any) {
                           console.error('[CHARACTER_NODE] GENERATE_ALL failed for:', name, e);
+                          console.error('[CHARACTER_NODE] Error stack:', e?.stack);
+                          console.error('[CHARACTER_NODE] Error details:', {
+                              message: e?.message,
+                              name: e?.name,
+                              cause: e?.cause
+                          });
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
-                          newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e.message };
+                          if (idx >= 0) {
+                              newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e?.message || String(e) };
+                          }
                       }
                   }
 
@@ -2782,16 +2923,36 @@ export const App = () => {
                       }
                   } catch (e) { console.warn("Storyboard planning failed", e); }
                }
-              const res = await generateImageFromText(
-                  finalPrompt,
-                  getUserDefaultModel('image'),
-                  inputImages,
-                  { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount },
-                  { nodeId: id, nodeType: node.type }
-              );
-              handleNodeUpdate(id, { image: res[0], images: res });
-              // Save to local storage
-              await saveImageNodeOutput(id, res, 'IMAGE_GENERATOR');
+
+               // ✅ 检查缓存
+               const cachedImages = await checkImageNodeCache(id);
+               if (cachedImages && cachedImages.length > 0) {
+                   console.log('[App] ✅ 使用缓存的图片:', cachedImages.length);
+                   handleNodeUpdate(id, {
+                       image: cachedImages[0],
+                       images: cachedImages,
+                       status: NodeStatus.SUCCESS,
+                       isCached: true,
+                       cacheLocation: 'filesystem'
+                   });
+               } else {
+                   // ❌ 没有缓存，调用 API
+                   console.log('[App] 🌐 缓存未命中，调用 API 生成图片');
+                  const res = await generateImageFromText(
+                      finalPrompt,
+                      getUserDefaultModel('image'),
+                      inputImages,
+                      { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount },
+                      { nodeId: id, nodeType: node.type }
+                  );
+                  handleNodeUpdate(id, {
+                      image: res[0],
+                      images: res,
+                      isCached: false
+                  });
+                  // Save to local storage
+                  await saveImageNodeOutput(id, res, 'IMAGE_GENERATOR');
+               }
 
           } else if (node.type === NodeType.VIDEO_GENERATOR) {
               // Extract style preset from inputs
@@ -2800,33 +2961,56 @@ export const App = () => {
               const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
 
               const strategy = await getGenerationStrategy(node, inputs, finalPrompt);
-              const res = await generateVideo(
-                  strategy.finalPrompt,
-                  node.data.model,
-                  {
-                      aspectRatio: node.data.aspectRatio || '16:9',
-                      count: node.data.videoCount || 1,
-                      generationMode: strategy.generationMode,
-                      resolution: node.data.resolution
-                  },
-                  strategy.inputImageForGeneration,
-                  strategy.videoInput,
-                  strategy.referenceImages,
-                  { nodeId: id, nodeType: node.type }
-              );
-              if (res.isFallbackImage) {
-                   handleNodeUpdate(id, {
-                       image: res.uri,
-                       videoUri: undefined,
-                       videoMetadata: undefined,
-                       error: "Region restricted: Generated preview image instead.",
-                       status: NodeStatus.SUCCESS
-                   });
+
+              // ✅ 检查缓存
+              const cachedVideo = await checkVideoNodeCache(id);
+              if (cachedVideo) {
+                  console.log('[App] ✅ 使用缓存的视频');
+                  handleNodeUpdate(id, {
+                      videoUri: cachedVideo,
+                      videoMetadata: node.data.videoMetadata,
+                      videoUris: [cachedVideo],
+                      status: NodeStatus.SUCCESS,
+                      isCached: true,
+                      cacheLocation: 'filesystem'
+                  });
               } else {
-                   handleNodeUpdate(id, { videoUri: res.uri, videoMetadata: res.videoMetadata, videoUris: res.uris });
-                   // Save to local storage
-                   const videoUris = res.uris || [res.uri];
-                   await saveVideoNodeOutput(id, videoUris, 'VIDEO_GENERATOR');
+                  // ❌ 没有缓存，调用 API
+                  console.log('[App] 🌐 缓存未命中，调用 API 生成视频');
+                  const res = await generateVideo(
+                      strategy.finalPrompt,
+                      node.data.model,
+                      {
+                          aspectRatio: node.data.aspectRatio || '16:9',
+                          count: node.data.videoCount || 1,
+                          generationMode: strategy.generationMode,
+                          resolution: node.data.resolution
+                      },
+                      strategy.inputImageForGeneration,
+                      strategy.videoInput,
+                      strategy.referenceImages,
+                      { nodeId: id, nodeType: node.type }
+                  );
+                  if (res.isFallbackImage) {
+                       handleNodeUpdate(id, {
+                           image: res.uri,
+                           videoUri: undefined,
+                           videoMetadata: undefined,
+                           error: "Region restricted: Generated preview image instead.",
+                           status: NodeStatus.SUCCESS,
+                           isCached: false
+                       });
+                  } else {
+                       handleNodeUpdate(id, {
+                           videoUri: res.uri,
+                           videoMetadata: res.videoMetadata,
+                           videoUris: res.uris,
+                           isCached: false
+                       });
+                       // Save to local storage
+                       const videoUris = res.uris || [res.uri];
+                       await saveVideoNodeOutput(id, videoUris, 'VIDEO_GENERATOR');
+                  }
               }
 
           } else if (node.type === NodeType.AUDIO_GENERATOR) {
@@ -2835,10 +3019,27 @@ export const App = () => {
               const stylePrefix = stylePresetNode?.data.stylePrompt || '';
               const finalPrompt = stylePrefix ? `${stylePrefix}, ${prompt}` : prompt;
 
-              const audioUri = await generateAudio(finalPrompt, node.data.model);
-              handleNodeUpdate(id, { audioUri: audioUri });
-              // Save to local storage
-              await saveAudioNodeOutput(id, audioUri, 'AUDIO_GENERATOR');
+              // ✅ 检查缓存
+              const cachedAudio = await checkAudioNodeCache(id);
+              if (cachedAudio) {
+                  console.log('[App] ✅ 使用缓存的音频');
+                  handleNodeUpdate(id, {
+                      audioUri: cachedAudio,
+                      status: NodeStatus.SUCCESS,
+                      isCached: true,
+                      cacheLocation: 'filesystem'
+                  });
+              } else {
+                  // ❌ 没有缓存，调用 API
+                  console.log('[App] 🌐 缓存未命中，调用 API 生成音频');
+                  const audioUri = await generateAudio(finalPrompt, node.data.model);
+                  handleNodeUpdate(id, {
+                      audioUri: audioUri,
+                      isCached: false
+                  });
+                  // Save to local storage
+                  await saveAudioNodeOutput(id, audioUri, 'AUDIO_GENERATOR');
+              }
 
           } else if (node.type === NodeType.STORYBOARD_GENERATOR) {
               const episodeContent = prompt; 
@@ -4012,7 +4213,28 @@ COMPOSITION REQUIREMENTS:
           <AssistantPanel isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
 
           {/* Language Toggle Button */}
-          <div className="absolute top-8 right-8 z-50 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="absolute top-8 right-8 z-50 animate-in fade-in slide-in-from-top-4 duration-700 flex flex-col gap-2 items-end">
+              {storageReconnectNeeded && (
+                  <button
+                      onClick={async () => {
+                          try {
+                              const { getFileStorageService } = await import('./services/storage');
+                              const service = getFileStorageService();
+                              await service.selectRootDirectory();
+                              setStorageReconnectNeeded(false);
+                              alert('✅ 已成功连接工作文件夹！');
+                          } catch (error: any) {
+                              console.error('[App] 重连失败:', error);
+                              alert('❌ 连接失败: ' + error.message);
+                          }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 backdrop-blur-2xl border border-orange-500/30 rounded-full shadow-2xl text-orange-300 hover:text-orange-200 hover:border-orange-500/50 transition-all hover:scale-105 animate-pulse"
+                      title="点击重新连接本地存储文件夹"
+                  >
+                      <HardDrive size={16} />
+                      <span className="text-xs font-medium">重连存储</span>
+                  </button>
+              )}
               <button
                   onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}
                   className="flex items-center gap-2 px-4 py-2 bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl text-slate-300 hover:text-white hover:border-white/20 transition-all hover:scale-105"

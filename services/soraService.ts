@@ -107,17 +107,8 @@ export async function checkSoraTaskStatus(
     taskId,
   });
 
-  // 调用提供商的查询方法
-  return logAPICall(
-    'checkSoraTaskStatus',
-    () => provider.checkStatus(taskId, apiKey, onProgress, context),
-    {
-      provider: providerName,
-      taskId,
-      hasProgressCallback: !!onProgress,
-    },
-    context
-  );
+  // 调用提供商的查询方法（不记录到API日志面板，避免日志过多）
+  return provider.checkStatus(taskId, apiKey, onProgress, context);
 }
 
 /**

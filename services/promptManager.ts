@@ -1,5 +1,6 @@
 /**
- * 角色生成提示词管理服务
+ * 提示词管理服务
+ * 支持角色生成、视频生成
  * 支持中英文切换、同步编辑，以及多种视觉风格（3D、REAL、ANIME）
  */
 
@@ -11,6 +12,12 @@ export interface PromptPair {
 export interface CharacterPrompts {
   expressionPrompt: PromptPair;
   threeViewPrompt: PromptPair;
+}
+
+export interface VideoPrompts {
+  storyboardPrompt: PromptPair;
+  cinematicPrompt: PromptPair;
+  soraPrompt: PromptPair;
 }
 
 // ============================================
@@ -269,6 +276,177 @@ REFERENCE IMAGE: Use the expression sheet as visual reference for face and cloth
 };
 
 // ============================================
+// 视频生成提示词模板
+// ============================================
+
+// 分镜图视频提示词
+const DEFAULT_STORYBOARD_VIDEO_PROMPT: PromptPair = {
+  zh: `{SCENE_DESCRIPTION}
+
+运镜要求：
+{CAMERA_MOVEMENT}
+
+视觉风格：
+{VISUAL_STYLE}
+
+角色：
+{CHARACTERS}
+
+关键约束：
+- 视频时长：{DURATION}
+- 保持场景连续性和一致性
+- 流畅的运镜和自然的动作
+- 高质量视频输出，避免帧率不稳定
+- 遵循分镜图描述的构图和氛围`,
+
+  en: `{SCENE_DESCRIPTION}
+
+Camera Movement:
+{CAMERA_MOVEMENT}
+
+Visual Style:
+{VISUAL_STYLE}
+
+Characters:
+{CHARACTERS}
+
+Key Constraints:
+- Video Duration: {DURATION}
+- Maintain scene continuity and consistency
+- Smooth camera movement and natural motion
+- High quality video output, avoid frame rate instability
+- Follow the composition and atmosphere described in the storyboard`
+};
+
+// 电影感视频提示词
+const DEFAULT_CINEMATIC_VIDEO_PROMPT: PromptPair = {
+  zh: `电影感视频生成，专业级电影摄影质感。
+
+场景描述：{SCENE}
+
+摄影参数：
+- 光线：{LIGHTING}
+- 色调：{COLOR_GRADE}
+- 运镜：{CAMERA_WORK}
+- 景别：{SHOT_SIZE}
+
+技术要求：
+- 4K分辨率，电影级画质
+- 专业色彩分级，电影质感调色
+- 平滑的摄像机运动
+- 自然的演员表演和动作
+- 环境光和阴影的真实处理
+- 高动态范围（HDR）质量
+
+输出要求：
+- 视频时长：{DURATION}
+- 帧率：24fps 或 30fps
+- 无抖动、无闪烁
+- 流畅的镜头过渡`,
+
+  en: `Cinematic video generation, professional movie-quality cinematography.
+
+Scene Description: {SCENE}
+
+Cinematography Parameters:
+- Lighting: {LIGHTING}
+- Color Grade: {COLOR_GRADE}
+- Camera Work: {CAMERA_WORK}
+- Shot Size: {SHOT_SIZE}
+
+Technical Requirements:
+- 4K resolution, movie-grade quality
+- Professional color grading, cinematic color timing
+- Smooth camera movement
+- Natural acting and motion
+- Realistic handling of ambient light and shadows
+- High Dynamic Range (HDR) quality
+
+Output Requirements:
+- Video Duration: {DURATION}
+- Frame Rate: 24fps or 30fps
+- No shaking, no flickering
+- Smooth shot transitions`
+};
+
+// Sora 专用视频提示词
+const DEFAULT_SORA_VIDEO_PROMPT: PromptPair = {
+  zh: `AI视频生成提示词，适用于Sora等高质量视频生成模型。
+
+场景描述：{SCENE}
+
+详细视觉要求：
+{VISUAL_DETAILS}
+
+镜头语言：
+- 运镜方式：{CAMERA_MOVEMENT}
+- 景别：{SHOT_SIZE}
+- 拍摄角度：{ANGLE}
+- 镜头语言：{LANGUAGE_OF_LENS}
+
+环境与氛围：
+- 场景设定：{ENVIRONMENT}
+- 灯光：{LIGHTING}
+- 色调：{MOOD}
+- 氛围感：{ATMOSPHERE}
+
+人物与动作：
+{CHARACTERS_AND_ACTIONS}
+
+技术规范：
+- 视频比例：{ASPECT_RATIO}
+- 视频时长：{DURATION}
+- 画质质量：{QUALITY}
+
+创作风格：
+{STYLE_GUIDANCE}
+
+质量要求：
+- 高度连贯的时序一致性
+- 物理准确的运动和互动
+- 稳定的画面质量，无闪烁或突变
+- 自然的过渡和流畅的动作
+- 符合现实世界的物理规律`,
+
+  en: `AI video generation prompt, optimized for high-quality video generation models like Sora.
+
+Scene Description: {SCENE}
+
+Detailed Visual Requirements:
+{VISUAL_DETAILS}
+
+Cinematography:
+- Camera Movement: {CAMERA_MOVEMENT}
+- Shot Size: {SHOT_SIZE}
+- Camera Angle: {ANGLE}
+- Lens Language: {LANGUAGE_OF_LENS}
+
+Environment and Atmosphere:
+- Scene Setting: {ENVIRONMENT}
+- Lighting: {LIGHTING}
+- Color Tone: {MOOD}
+- Atmosphere: {ATMOSPHERE}
+
+Characters and Actions:
+{CHARACTERS_AND_ACTIONS}
+
+Technical Specifications:
+- Aspect Ratio: {ASPECT_RATIO}
+- Duration: {DURATION}
+- Quality: {QUALITY}
+
+Creative Style:
+{STYLE_GUIDANCE}
+
+Quality Requirements:
+- High degree of temporal consistency
+- Physically accurate motion and interactions
+- Stable image quality, no flickering or sudden changes
+- Natural transitions and smooth motion
+- Consistent with real-world physics`
+};
+
+// ============================================
 // PromptManager 类
 // ============================================
 
@@ -324,11 +502,11 @@ class PromptManager {
     // 根据风格类型生成对应的负面提示词
     let negativePrompt = '';
     if (styleType === '3D') {
-      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, 2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D, paper cutout, translucent, ghostly, ethereal, glowing aura, overly photorealistic, hyper-realistic skin, photorealistic rendering";
+      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, chinese text, english text, korean text, japanese text, any text, any characters, any letters, numbers, symbols, subtitles, captions, title, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, 2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D, paper cutout, translucent, ghostly, ethereal, glowing aura, overly photorealistic, hyper-realistic skin, photorealistic rendering";
     } else if (styleType === 'REAL') {
-      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, anime, cartoon, illustration, 3d render, cgi, 3d animation, painting, drawing";
+      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, chinese text, english text, korean text, japanese text, any text, any characters, any letters, numbers, symbols, subtitles, captions, title, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, anime, cartoon, illustration, 3d render, cgi, 3d animation, painting, drawing";
     } else if (styleType === 'ANIME') {
-      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, photorealistic, realistic, photo, 3d, cgi, live action, hyper-realistic, skin texture, pores";
+      negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, chinese text, english text, korean text, japanese text, any text, any characters, any letters, numbers, symbols, subtitles, captions, title, full body, standing, legs, feet, full-length portrait, wide shot, environmental background, patterned background, gradient background, photorealistic, realistic, photo, 3d, cgi, live action, hyper-realistic, skin texture, pores";
     }
 
     return {
@@ -421,6 +599,170 @@ class PromptManager {
     return {
       expressionPrompt: { ...this.getExpressionPromptTemplate(styleType) },
       threeViewPrompt: { ...this.getThreeViewPromptTemplate(styleType) }
+    };
+  }
+
+  // ============================================
+  // 视频生成提示词方法
+  // ============================================
+
+  /**
+   * 构建分镜图视频提示词
+   * @param params 视频参数
+   */
+  buildStoryboardVideoPrompt(params: {
+    sceneDescription: string;
+    cameraMovement?: string;
+    visualStyle?: string;
+    characters?: string;
+    duration?: string;
+  }): { zh: string; en: string } {
+    const {
+      sceneDescription,
+      cameraMovement = '平滑运镜，自然过渡',
+      visualStyle = '高质量3D动漫风格',
+      characters = '主要角色表演',
+      duration = '5秒'
+    } = params;
+
+    return {
+      zh: DEFAULT_STORYBOARD_VIDEO_PROMPT.zh
+        .replace('{SCENE_DESCRIPTION}', sceneDescription)
+        .replace('{CAMERA_MOVEMENT}', cameraMovement)
+        .replace('{VISUAL_STYLE}', visualStyle)
+        .replace('{CHARACTERS}', characters)
+        .replace('{DURATION}', duration),
+      en: DEFAULT_STORYBOARD_VIDEO_PROMPT.en
+        .replace('{SCENE_DESCRIPTION}', sceneDescription)
+        .replace('{CAMERA_MOVEMENT}', cameraMovement)
+        .replace('{VISUAL_STYLE}', visualStyle)
+        .replace('{CHARACTERS}', characters)
+        .replace('{DURATION}', duration)
+    };
+  }
+
+  /**
+   * 构建电影感视频提示词
+   * @param params 视频参数
+   */
+  buildCinematicVideoPrompt(params: {
+    scene: string;
+    lighting?: string;
+    colorGrade?: string;
+    cameraWork?: string;
+    shotSize?: string;
+    duration?: string;
+  }): { zh: string; en: string } {
+    const {
+      scene,
+      lighting = '专业电影灯光，自然光与环境光结合',
+      colorGrade = '电影级色彩分级，暖色调',
+      cameraWork = '平滑的电影摄像机运动',
+      shotSize = '中景',
+      duration = '5秒'
+    } = params;
+
+    return {
+      zh: DEFAULT_CINEMATIC_VIDEO_PROMPT.zh
+        .replace('{SCENE}', scene)
+        .replace('{LIGHTING}', lighting)
+        .replace('{COLOR_GRADE}', colorGrade)
+        .replace('{CAMERA_WORK}', cameraWork)
+        .replace('{SHOT_SIZE}', shotSize)
+        .replace('{DURATION}', duration),
+      en: DEFAULT_CINEMATIC_VIDEO_PROMPT.en
+        .replace('{SCENE}', scene)
+        .replace('{LIGHTING}', lighting)
+        .replace('{COLOR_GRADE}', colorGrade)
+        .replace('{CAMERA_WORK}', cameraWork)
+        .replace('{SHOT_SIZE}', shotSize)
+        .replace('{DURATION}', duration)
+    };
+  }
+
+  /**
+   * 构建 Sora 视频提示词
+   * @param params Sora 视频参数
+   */
+  buildSoraVideoPrompt(params: {
+    scene: string;
+    visualDetails?: string;
+    cameraMovement?: string;
+    shotSize?: string;
+    angle?: string;
+    languageOfLens?: string;
+    environment?: string;
+    lighting?: string;
+    mood?: string;
+    atmosphere?: string;
+    charactersAndActions?: string;
+    aspectRatio?: '16:9' | '9:16';
+    duration?: string;
+    quality?: 'hd' | 'sd';
+    styleGuidance?: string;
+  }): { zh: string; en: string } {
+    const {
+      scene,
+      visualDetails = '高精度细节，电影级画质',
+      cameraMovement = '平滑运镜',
+      shotSize = '中景',
+      angle = '平视',
+      languageOfLens = '标准镜头',
+      environment = '室内场景',
+      lighting = '自然光',
+      mood = '暖色调',
+      atmosphere = '舒适氛围',
+      charactersAndActions = '角色自然表演',
+      aspectRatio = '16:9',
+      duration = '5秒',
+      quality = 'hd',
+      styleGuidance = '写实风格'
+    } = params;
+
+    return {
+      zh: DEFAULT_SORA_VIDEO_PROMPT.zh
+        .replace('{SCENE}', scene)
+        .replace('{VISUAL_DETAILS}', visualDetails)
+        .replace('{CAMERA_MOVEMENT}', cameraMovement)
+        .replace('{SHOT_SIZE}', shotSize)
+        .replace('{ANGLE}', angle)
+        .replace('{LANGUAGE_OF_LENS}', languageOfLens)
+        .replace('{ENVIRONMENT}', environment)
+        .replace('{LIGHTING}', lighting)
+        .replace('{MOOD}', mood)
+        .replace('{ATMOSPHERE}', atmosphere)
+        .replace('{CHARACTERS_AND_ACTIONS}', charactersAndActions)
+        .replace('{ASPECT_RATIO}', aspectRatio)
+        .replace('{DURATION}', duration)
+        .replace('{QUALITY}', quality === 'hd' ? '高清' : '标清')
+        .replace('{STYLE_GUIDANCE}', styleGuidance),
+      en: DEFAULT_SORA_VIDEO_PROMPT.en
+        .replace('{SCENE}', scene)
+        .replace('{VISUAL_DETAILS}', visualDetails)
+        .replace('{CAMERA_MOVEMENT}', cameraMovement)
+        .replace('{SHOT_SIZE}', shotSize)
+        .replace('{ANGLE}', angle)
+        .replace('{LANGUAGE_OF_LENS}', languageOfLens)
+        .replace('{ENVIRONMENT}', environment)
+        .replace('{LIGHTING}', lighting)
+        .replace('{MOOD}', mood)
+        .replace('{ATMOSPHERE}', atmosphere)
+        .replace('{CHARACTERS_AND_ACTIONS}', charactersAndActions)
+        .replace('{ASPECT_RATIO}', aspectRatio)
+        .replace('{DURATION}', duration)
+        .replace('{QUALITY}', quality)
+        .replace('{STYLE_GUIDANCE}', styleGuidance)
+    };
+  }
+
+  /**
+   * 获取默认视频提示词
+   */
+  getDefaultVideoPrompts(): VideoPrompts {
+    return {
+      storyboardPrompt: { ...DEFAULT_STORYBOARD_VIDEO_PROMPT },
+      cinematicPrompt: { ...DEFAULT_CINEMATIC_VIDEO_PROMPT },
+      soraPrompt: { ...DEFAULT_SORA_VIDEO_PROMPT }
     };
   }
 }

@@ -14,7 +14,7 @@ import { AppNode, NodeType, NodeStatus, Connection, ContextMenuState, Group, Wor
 import { generateImageFromText, generateVideo, analyzeVideo, editImageWithText, planStoryboard, orchestrateVideoPrompt, compileMultiFramePrompt, urlToBase64, extractLastFrame, generateAudio, generateScriptPlanner, generateScriptEpisodes, generateCinematicStoryboard, extractCharactersFromText, generateCharacterProfile, detectTextInImage, analyzeDrama } from './services/geminiService';
 import { getUserDefaultModel } from '../services/modelConfig';
 import { getGenerationStrategy } from './services/videoStrategies';
-import { saveToStorage, loadFromStorage } from './services/storage';
+import { saveToStorage, loadFromStorage } from './services/storage_old';
 import { 
     Plus, Copy, Trash2, Type, Image as ImageIcon, Video as VideoIcon, 
     ScanFace, Brush, MousePointerClick, LayoutTemplate, X, Film, Link, RefreshCw, Upload,

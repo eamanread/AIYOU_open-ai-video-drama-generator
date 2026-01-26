@@ -384,31 +384,37 @@ export const StorageSettingsPanel: React.FC<StorageSettingsPanelProps> = ({
       <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-3">
         <div className="flex items-center gap-2 text-blue-400">
           <HardDrive size={16} />
-          <span className="text-xs font-bold">本地存储功能</span>
+          <span className="text-xs font-bold">💡 关于本地存储</span>
         </div>
         <ul className="text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">•</span>
             <span>
-              所有生成的图片、视频、音频将自动保存到您选择的文件夹中
+              <strong className="text-white">文件永久保存：</strong>所有生成的图片、视频、音频将自动保存到您选择的文件夹中，关闭浏览器也不会丢失
             </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">•</span>
             <span>
-              按画布和节点类型自动分类存储，文件组织清晰
+              <strong className="text-white">智能缓存：</strong>生成过的内容会自动从本地加载，节省API调用成本，刷新页面后立即显示
             </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">•</span>
             <span>
-              支持将现有浏览器存储的数据迁移到本地文件系统
+              <strong className="text-white">文件管理：</strong>您可以在Finder/文件管理器中直接查看和管理文件，按画布和节点类型自动分类存储
             </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">•</span>
             <span>
-              每次打开应用需要重新授权访问文件夹（安全机制）
+              <strong className="text-white">重新授权：</strong>每次打开应用需要重新选择同一文件夹（浏览器安全要求），选择"取消"仍可正常使用
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5">•</span>
+            <span>
+              <strong className="text-white">随时禁用：</strong>关闭本地存储后，系统恢复到浏览器存储模式，不影响已保存的文件
             </span>
           </li>
         </ul>

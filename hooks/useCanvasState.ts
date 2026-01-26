@@ -57,24 +57,32 @@ export function useCanvasState() {
   }, []);
 
   /**
-   * 缩放画布
+   * 缩放画布（以指定屏幕坐标为中心）
+   * @param delta 缩放增量
+   * @param screenX 缩放中心的屏幕 X 坐标（可选）
+   * @param screenY 缩放中心的屏幕 Y 坐标（可选）
    */
-  const zoomCanvas = useCallback((delta: number, centerX?: number, centerY?: number) => {
-    setScale(prevScale => {
-      const newScale = Math.max(0.2, Math.min(3, prevScale + delta));
+  const zoomCanvas = useCallback((delta: number, screenX?: number, screenY?: number) => {
+    if (screenX !== undefined && screenY !== undefined) {
+      // 以鼠标位置为中心缩放
+      // 1. 计算鼠标在当前画布世界坐标系中的位置
+      const worldX = (screenX - pan.x) / scale;
+      const worldY = (screenY - pan.y) / scale;
 
-      // 如果提供了中心点,调整平移以保持中心点位置
-      if (centerX !== undefined && centerY !== undefined) {
-        const scaleFactor = newScale / prevScale;
-        setPan(prevPan => ({
-          x: centerX - (centerX - prevPan.x) * scaleFactor,
-          y: centerY - (centerY - prevPan.y) * scaleFactor
-        }));
-      }
+      // 2. 应用新缩放
+      const newScale = Math.max(0.2, Math.min(3, scale + delta));
 
-      return newScale;
-    });
-  }, []);
+      // 3. 计算新的平移值，使鼠标下的世界坐标点保持在鼠标下方
+      const newPanX = screenX - worldX * newScale;
+      const newPanY = screenY - worldY * newScale;
+
+      setPan({ x: newPanX, y: newPanY });
+      setScale(newScale);
+    } else {
+      // 无中心点，简单缩放
+      setScale(prevScale => Math.max(0.2, Math.min(3, prevScale + delta)));
+    }
+  }, [pan, scale]);
 
   /**
    * 重置画布视图

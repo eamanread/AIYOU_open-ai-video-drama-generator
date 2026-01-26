@@ -515,6 +515,64 @@ class CharacterGenerationManager {
   }
 
   /**
+   * 从 node.data 恢复角色数据（用于刷新后恢复）
+   */
+  restoreCharacter(
+    nodeId: string,
+    characterName: string,
+    data: {
+      profile?: any;
+      expressionSheet?: string;
+      threeViewSheet?: string;
+      expressionPromptZh?: string;
+      expressionPromptEn?: string;
+      threeViewPromptZh?: string;
+      threeViewPromptEn?: string;
+    }
+  ): void {
+    const characterId = this.createCharacterId(nodeId, characterName);
+    let state = this.states.get(characterId);
+
+    // 如果不存在，先初始化
+    if (!state) {
+      state = this.initializeCharacter(nodeId, characterName);
+    }
+
+    console.log('[CharacterGenerationManager] restoreCharacter:', { nodeId, characterName, characterId, hasProfile: !!data.profile, hasExpression: !!data.expressionSheet, hasThreeView: !!data.threeViewSheet });
+
+    // 直接更新内部状态
+    if (data.profile) {
+      state.profile = data.profile;
+      state.profileStatus = 'SUCCESS';
+    }
+
+    if (data.expressionSheet) {
+      state.expressionSheet = data.expressionSheet;
+      state.expressionStatus = 'SUCCESS';
+    }
+
+    if (data.threeViewSheet) {
+      state.threeViewSheet = data.threeViewSheet;
+      state.threeViewStatus = 'SUCCESS';
+    }
+
+    if (data.expressionPromptZh) {
+      state.expressionPromptZh = data.expressionPromptZh;
+    }
+    if (data.expressionPromptEn) {
+      state.expressionPromptEn = data.expressionPromptEn;
+    }
+    if (data.threeViewPromptZh) {
+      state.threeViewPromptZh = data.threeViewPromptZh;
+    }
+    if (data.threeViewPromptEn) {
+      state.threeViewPromptEn = data.threeViewPromptEn;
+    }
+
+    state.updatedAt = Date.now();
+  }
+
+  /**
    * 删除角色
    */
   deleteCharacter(nodeId: string, characterName: string): void {

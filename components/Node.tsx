@@ -481,8 +481,71 @@ const NodeComponent: React.FC<NodeProps> = ({
   const [viewingOutline, setViewingOutline] = useState(false);
   const actionProcessingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 🚀 Sora2配置本地状态 - 用于立即响应UI更新
+  const [localSoraConfigs, setLocalSoraConfigs] = useState<Record<string, { aspect_ratio: string; duration: string; hd: boolean }>>({});
+
+  // 同步 node.data.taskGroups 到本地状态
+  useEffect(() => {
+    if (node.type === NodeType.SORA_VIDEO_GENERATOR) {
+      const configs: Record<string, any> = {};
+      (node.data.taskGroups || []).forEach((tg: any) => {
+        if (tg.id) {  // 🔥 安全检查：确保 tg.id 存在
+          configs[tg.id] = {
+            aspect_ratio: tg.sora2Config?.aspect_ratio || '16:9',
+            duration: tg.sora2Config?.duration || '10',
+            hd: tg.sora2Config?.hd ?? true
+          };
+        }
+      });
+      setLocalSoraConfigs(configs);
+    }
+  }, [node.id, node.data.taskGroups]);
+
   useEffect(() => { setLocalPrompt(node.data.prompt || ''); }, [node.data.prompt]);
   const commitPrompt = () => { if (localPrompt !== (node.data.prompt || '')) onUpdate(node.id, { prompt: localPrompt }); };
+
+  // 🔥 关键修复：从 node.data 恢复角色数据到 manager（刷新后需要）
+  useEffect(() => {
+    if (node.type !== NodeType.CHARACTER_NODE) return;
+
+    const restoreManagerFromNodeData = async () => {
+      try {
+        const { characterGenerationManager } = await import('../services/characterGenerationManager');
+        const generated = node.data.generatedCharacters || [];
+
+        // 遍历所有已生成的角色，恢复到 manager
+        for (const char of generated) {
+          if (char.basicStats || char.profession || char.expressionSheet || char.threeViewSheet) {
+            const state = characterGenerationManager.getCharacterState(node.id, char.name);
+
+            // 如果 manager 中没有这个角色，或者数据不完整，则恢复
+            if (!state || !state.profile) {
+              characterGenerationManager.restoreCharacter(node.id, char.name, {
+                profile: char,
+                expressionSheet: char.expressionSheet,
+                threeViewSheet: char.threeViewSheet,
+                expressionPromptZh: char.expressionPromptZh,
+                expressionPromptEn: char.expressionPromptEn,
+                threeViewPromptZh: char.threeViewPromptZh,
+                threeViewPromptEn: char.threeViewPromptEn
+              });
+
+              console.log('[Node] ✅ Restored character to manager:', char.name, {
+                hasProfile: !!char.basicStats,
+                hasExpression: !!char.expressionSheet,
+                hasThreeView: !!char.threeViewSheet
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Node] Failed to restore characters to manager:', error);
+      }
+    };
+
+    restoreManagerFromNodeData();
+  }, [node.id, node.data.generatedCharacters, node.type]);
+
 
   // 防重复点击的 Action 处理函数
   const handleActionClick = () => {
@@ -591,31 +654,78 @@ const NodeComponent: React.FC<NodeProps> = ({
               return;
           }
 
-          // 其他视频类型，转换为 Blob URL
-          let isActive = true;
-          setIsLoadingVideo(true);
+          // ✅ 优先从本地存储加载视频
+          const loadFromLocalFirst = async () => {
+              try {
+                  // 动态导入存储服务
+                  const { getFileStorageService } = await import('../services/storage/index');
+                  const service = getFileStorageService();
 
-          const loadVideo = async () => {
-            try {
-              const response = await fetch(videoSource);
-              const blob = await response.blob();
-              if (isActive) {
-                  const mp4Blob = new Blob([blob], { type: 'video/mp4' });
-                  setVideoBlobUrl(URL.createObjectURL(mp4Blob));
-                  setIsLoadingVideo(false);
+                  // 检查本地存储是否启用
+                  if (service.isEnabled()) {
+                      console.log('[Node] 📁 尝试从本地存储加载视频:', node.id);
+
+                      // 获取该节点的所有视频文件
+                      const metadataManager = (service as any).metadataManager;
+                      if (metadataManager) {
+                          const files = metadataManager.getFilesByNode(node.id);
+                          const videoFiles = files.filter((f: any) =>
+                              f.relativePath.includes('.mp4') ||
+                              f.relativePath.includes('.video') ||
+                              f.mimeType?.startsWith('video/')
+                          );
+
+                          if (videoFiles.length > 0) {
+                              console.log(`[Node] ✅ 找到 ${videoFiles.length} 个本地视频文件`);
+
+                              // 读取第一个视频文件
+                              const dataUrl = await service.readFileAsDataUrl(videoFiles[0].relativePath);
+                              setVideoBlobUrl(dataUrl);
+                              setIsLoadingVideo(false);
+
+                              console.log('[Node] ✅ 使用本地视频文件');
+                              return;
+                          } else {
+                              console.log('[Node] 📭 本地存储中没有找到视频，使用在线URL');
+                          }
+                      }
+                  }
+              } catch (error) {
+                  console.log('[Node] 本地存储加载失败，使用在线URL:', error);
               }
-            } catch (err) {
-              console.error('[Node] 视频加载失败:', err);
-              if (isActive) setIsLoadingVideo(false);
-            }
+
+              // ❌ 本地存储中没有，使用在线URL
+              console.log('[Node] 🌐 从在线URL加载视频');
+
+              // 其他视频类型，转换为 Blob URL
+              let isActive = true;
+              setIsLoadingVideo(true);
+
+              const loadVideo = async () => {
+                  try {
+                      const response = await fetch(videoSource);
+                      const blob = await response.blob();
+                      if (isActive) {
+                          const mp4Blob = new Blob([blob], { type: 'video/mp4' });
+                          setVideoBlobUrl(URL.createObjectURL(mp4Blob));
+                          setIsLoadingVideo(false);
+                      }
+                  } catch (err) {
+                      console.error('[Node] 视频加载失败:', err);
+                      if (isActive) setIsLoadingVideo(false);
+                  }
+              };
+
+              loadVideo();
+
+              // Cleanup function
+              return () => {
+                  isActive = false;
+                  if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+              };
           };
 
-          loadVideo();
-
-          return () => {
-              isActive = false;
-              if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
-          };
+          loadFromLocalFirst();
       }
   }, [node.data.videoUri, node.data.videoUrl, node.type, node.id]);
 
@@ -779,6 +889,16 @@ const NodeComponent: React.FC<NodeProps> = ({
             </span>
           )}
           {isWorking && <Loader2 className="animate-spin w-3 h-3 text-cyan-400 ml-1" />}
+          {/* ✅ 缓存指示器 */}
+          {node.data.isCached && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full ml-1"
+              title={`从缓存加载 (${node.data.cacheLocation || 'filesystem'})`}
+            >
+              <Database className="w-3 h-3 text-green-400" />
+              <span className="text-[9px] font-medium text-green-400">缓存</span>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2391,6 +2511,86 @@ const NodeComponent: React.FC<NodeProps> = ({
       if (node.type === NodeType.SORA_VIDEO_GENERATOR) {
           const taskGroups = node.data.taskGroups || [];
 
+          // 🚀 Sora2 视频本地文件缓存 - 优先使用本地文件
+          const [soraLocalVideos, setSoraLocalVideos] = useState<Record<string, string>>({});
+
+          // 加载本地 Sora2 视频
+          useEffect(() => {
+              let mounted = true;
+              const blobUrls: string[] = [];
+
+              const loadSoraLocalVideos = async () => {
+                  if (!taskGroups.length) return;
+
+                  try {
+                      const { getFileStorageService } = await import('../services/storage/index');
+                      const service = getFileStorageService();
+                      const localUrls: Record<string, string> = {};
+
+                      // 只在本地存储启用时尝试加载
+                      if (service.isEnabled() && mounted) {
+                          console.log('[Sora2] 📁 本地存储已启用，尝试加载本地视频');
+
+                          // 获取父节点下所有视频文件
+                          const metadataManager = (service as any).metadataManager;
+                          if (metadataManager) {
+                              const files = metadataManager.getFilesByNode(node.id);
+
+                              // 过滤出视频文件
+                              const videoFiles = files.filter((f: any) =>
+                                  f.relativePath.includes('.mp4') ||
+                                  f.relativePath.includes('.video') ||
+                                  f.mimeType?.startsWith('video/')
+                              );
+
+                              console.log(`[Sora2] 找到 ${videoFiles.length} 个本地视频文件`);
+
+                              // 按任务组 ID 匹配视频文件
+                              for (const videoFile of videoFiles) {
+                                  if (!mounted) break; // 🔥 防止组件卸载后继续执行
+
+                                  // 从文件路径中提取任务组 ID (格式: sora-video-{taskGroupId}-{timestamp}.mp4)
+                                  const match = videoFile.relativePath.match(/sora-video-([^-]+)/);
+                                  if (match) {
+                                      const taskGroupId = match[1];
+                                      const tg = taskGroups.find((t: any) => t.id === taskGroupId);
+                                      if (tg) {
+                                          console.log(`[Sora2] ✅ 匹配到任务组 ${tg.taskNumber} 的视频`);
+                                          const dataUrl = await service.readFileAsDataUrl(videoFile.relativePath);
+                                          if (mounted) {
+                                              localUrls[tg.id] = dataUrl;
+                                              if (dataUrl.startsWith('blob:')) {
+                                                  blobUrls.push(dataUrl);
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+
+                      if (mounted && Object.keys(localUrls).length > 0) {
+                          setSoraLocalVideos(localUrls);
+                          console.log(`[Sora2] ✅ 成功加载 ${Object.keys(localUrls).length} 个本地视频`);
+                      }
+                  } catch (error) {
+                      console.error('[Sora2] 加载本地视频失败:', error);
+                  }
+              };
+
+              loadSoraLocalVideos();
+
+              // 🔥 正确的清理函数
+              return () => {
+                  mounted = false;
+                  blobUrls.forEach(url => {
+                      if (url.startsWith('blob:')) {
+                          URL.revokeObjectURL(url);
+                      }
+                  });
+              };
+          }, [node.id, node.data.taskGroups]); // 🔥 使用稳定的依赖项
+
           return (
               <div className="w-full h-full flex flex-col bg-zinc-900 overflow-hidden">
                   {/* Task Groups List */}
@@ -2428,65 +2628,100 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                   {tg.totalDuration.toFixed(1)}秒 · {tg.shotIds.length}个镜头
                                               </span>
                                           </div>
-                                          <div className="flex items-center gap-1.5">
-                                              {/* Sora2 Config Button */}
-                                              <button
-                                                  onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      const currentConfig = tg.sora2Config || { aspect_ratio: '16:9', duration: '10', hd: true };
-                                                      const newConfig = { ...currentConfig, aspect_ratio: currentConfig.aspect_ratio === '16:9' ? '9:16' : '16:9' };
-                                                      onUpdate(node.id, {
-                                                          taskGroups: taskGroups.map((t: any, i: number) =>
+                                          <div className="flex items-center gap-2">
+                                              {/* 尺寸选择 */}
+                                              <div className="flex items-center gap-1">
+                                                  <span className="text-[8px] text-slate-400">尺寸</span>
+                                                  <select
+                                                      value={localSoraConfigs[tg.id]?.aspect_ratio || tg.sora2Config?.aspect_ratio || '16:9'}
+                                                      onChange={(e) => {
+                                                          e.stopPropagation();
+                                                          if (!tg.id) return;  // 🔥 安全检查
+                                                          const newValue = e.target.value as '16:9' | '9:16';
+                                                          // 🚀 立即更新本地状态
+                                                          setLocalSoraConfigs(prev => ({
+                                                            ...prev,
+                                                            [tg.id]: { ...prev[tg.id], aspect_ratio: newValue, duration: prev[tg.id]?.duration || '10', hd: prev[tg.id]?.hd ?? true }
+                                                          }));
+                                                          // 同时更新 node.data
+                                                          const baseConfig = { aspect_ratio: '16:9', duration: '10', hd: true };
+                                                          const newConfig = { ...baseConfig, ...tg.sora2Config, aspect_ratio: newValue };
+                                                          const updatedTaskGroups = taskGroups.map((t: any, i: number) =>
                                                               i === index ? { ...t, sora2Config: newConfig } : t
-                                                          )
-                                                      });
-                                                  }}
-                                                  className="px-1.5 py-0.5 bg-slate-600 hover:bg-slate-500 text-white text-[8px] rounded transition-colors"
-                                                  title="切换横/竖屏"
-                                              >
-                                                  📐
-                                              </button>
+                                                          );
+                                                          console.log('[Sora] 更新尺寸配置:', index, newConfig);
+                                                          onUpdate(node.id, { taskGroups: updatedTaskGroups });
+                                                      }}
+                                                      onPointerDownCapture={(e) => e.stopPropagation()}
+                                                      className="px-2 py-1 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-[9px] rounded border border-slate-600 cursor-pointer transition-colors min-w-[70px] outline-none focus:ring-1 focus:ring-blue-500"
+                                                  >
+                                                      <option value="16:9">横屏 16:9</option>
+                                                      <option value="9:16">竖屏 9:16</option>
+                                                  </select>
+                                              </div>
 
-                                              {/* Duration Toggle */}
-                                              <button
-                                                  onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      const durations = ['10', '15', '25'];
-                                                      const currentIndex = durations.indexOf(tg.sora2Config?.duration || '10');
-                                                      const nextDuration = durations[(currentIndex + 1) % 3];
-                                                      const baseConfig = { aspect_ratio: '16:9', duration: '10', hd: true };
-                                                      const newConfig = { ...baseConfig, ...tg.sora2Config, duration: nextDuration };
-                                                      onUpdate(node.id, {
-                                                          taskGroups: taskGroups.map((t: any, i: number) =>
+                                              {/* 时长选择 */}
+                                              <div className="flex items-center gap-1">
+                                                  <span className="text-[8px] text-slate-400">时长</span>
+                                                  <select
+                                                      value={localSoraConfigs[tg.id]?.duration || tg.sora2Config?.duration || '10'}
+                                                      onChange={(e) => {
+                                                          e.stopPropagation();
+                                                          if (!tg.id) return;  // 🔥 安全检查
+                                                          const newValue = e.target.value;
+                                                          // 🚀 立即更新本地状态
+                                                          setLocalSoraConfigs(prev => ({
+                                                            ...prev,
+                                                            [tg.id]: { ...prev[tg.id], duration: newValue, aspect_ratio: prev[tg.id]?.aspect_ratio || '16:9', hd: prev[tg.id]?.hd ?? true }
+                                                          }));
+                                                          // 同时更新 node.data
+                                                          const baseConfig = { aspect_ratio: '16:9', duration: '10', hd: true };
+                                                          const newConfig = { ...baseConfig, ...tg.sora2Config, duration: newValue };
+                                                          const updatedTaskGroups = taskGroups.map((t: any, i: number) =>
                                                               i === index ? { ...t, sora2Config: newConfig } : t
-                                                          )
-                                                      });
-                                                  }}
-                                                  className="px-1.5 py-0.5 bg-slate-600 hover:bg-slate-500 text-white text-[8px] rounded transition-colors"
-                                                  title={`切换时长: ${tg.sora2Config?.duration || '10'}s`}
-                                              >
-                                                  ⏱️
-                                              </button>
+                                                          );
+                                                          console.log('[Sora] 更新时长配置:', index, newConfig);
+                                                          onUpdate(node.id, { taskGroups: updatedTaskGroups });
+                                                      }}
+                                                      onPointerDownCapture={(e) => e.stopPropagation()}
+                                                      className="px-2 py-1 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-[9px] rounded border border-slate-600 cursor-pointer transition-colors min-w-[70px] outline-none focus:ring-1 focus:ring-blue-500"
+                                                  >
+                                                      <option value="10">10秒</option>
+                                                      <option value="15">15秒</option>
+                                                      <option value="25">25秒</option>
+                                                  </select>
+                                              </div>
 
-                                              {/* HD Toggle */}
-                                              <button
-                                                  onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      const newConfig = tg.sora2Config || { aspect_ratio: '16:9', duration: '10', hd: true };
-                                                      newConfig.hd = !newConfig.hd;
-                                                      onUpdate(node.id, {
-                                                          taskGroups: taskGroups.map((t: any, i: number) =>
+                                              {/* 质量选择 */}
+                                              <div className="flex items-center gap-1">
+                                                  <span className="text-[8px] text-slate-400">质量</span>
+                                                  <select
+                                                      value={localSoraConfigs[tg.id]?.hd ?? true ? 'hd' : 'sd'}
+                                                      onChange={(e) => {
+                                                          e.stopPropagation();
+                                                          if (!tg.id) return;  // 🔥 安全检查
+                                                          const isHd = e.target.value === 'hd';
+                                                          // 🚀 立即更新本地状态
+                                                          setLocalSoraConfigs(prev => ({
+                                                            ...prev,
+                                                            [tg.id]: { ...prev[tg.id], hd: isHd, aspect_ratio: prev[tg.id]?.aspect_ratio || '16:9', duration: prev[tg.id]?.duration || '10' }
+                                                          }));
+                                                          // 同时更新 node.data
+                                                          const baseConfig = { aspect_ratio: '16:9', duration: '10', hd: true };
+                                                          const newConfig = { ...baseConfig, ...tg.sora2Config, hd: isHd };
+                                                          const updatedTaskGroups = taskGroups.map((t: any, i: number) =>
                                                               i === index ? { ...t, sora2Config: newConfig } : t
-                                                          )
-                                                      });
-                                                  }}
-                                                  className={`px-1.5 py-0.5 text-white text-[8px] rounded transition-colors ${
-                                                      (tg.sora2Config?.hd ?? true) ? 'bg-green-500 hover:bg-green-600' : 'bg-slate-600 hover:bg-slate-500'
-                                                  }`}
-                                                  title={`高清: ${tg.sora2Config?.hd ?? true ? '开启' : '关闭'}`}
-                                              >
-                                                  🎬
-                                              </button>
+                                                          );
+                                                          console.log('[Sora] 更新质量配置:', index, newConfig);
+                                                          onUpdate(node.id, { taskGroups: updatedTaskGroups });
+                                                      }}
+                                                      onPointerDownCapture={(e) => e.stopPropagation()}
+                                                      className="px-2 py-1 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-[9px] rounded border border-slate-600 cursor-pointer transition-colors min-w-[70px] outline-none focus:ring-1 focus:ring-blue-500"
+                                                  >
+                                                      <option value="hd">高清</option>
+                                                      <option value="sd">标清</option>
+                                                  </select>
+                                              </div>
 
                                               {/* Generate Video Button */}
                                               <button
@@ -2800,18 +3035,26 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                                       )}
                                                                   </div>
                                                                   <div className="relative group/video rounded overflow-hidden border border-green-500/30 bg-black/40">
+                                                                      {/* 🚀 优先使用本地文件，降级到 URL */}
                                                                       <video
-                                                                          src={tg.videoUrl}
+                                                                          src={soraLocalVideos[tg.id] || tg.videoUrl}
                                                                           className="w-full h-auto object-contain cursor-pointer"
                                                                           controls
                                                                           playsInline
                                                                           preload="metadata"
                                                                       />
+                                                                      {/* 本地文件指示器 */}
+                                                                      {soraLocalVideos[tg.id] && (
+                                                                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-green-500/80 backdrop-blur-sm rounded text-[8px] font-bold text-white flex items-center gap-1">
+                                                                              <Database size={8} />
+                                                                              本地
+                                                                          </div>
+                                                                      )}
                                                                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/video:opacity-100 transition-opacity">
                                                                           <button
                                                                               onClick={(e) => {
                                                                                   e.stopPropagation();
-                                                                                  window.open(tg.videoUrl, '_blank');
+                                                                                  window.open(soraLocalVideos[tg.id] || tg.videoUrl, '_blank');
                                                                               }}
                                                                               className="p-1 bg-black/60 hover:bg-black/80 rounded text-white"
                                                                               title="在新窗口打开"
@@ -3582,20 +3825,47 @@ const NodeComponent: React.FC<NodeProps> = ({
                      ) : (
                          // Stage 2 & 3: Generate videos or regenerate
                          <>
+                             {/* Status Hint */}
+                             {taskGroups.filter((tg: any) => tg.splitShots && tg.splitShots.length > 0).length === 0 && (
+                                 <div className="px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                                     <div className="flex items-center gap-2 text-yellow-300 text-[9px]">
+                                         <AlertCircle size={12} />
+                                         <span>任务组尚未创建分镜数据，请确保已完成"开始生成"流程</span>
+                                     </div>
+                                 </div>
+                             )}
+
                              <div className="flex gap-2">
                                  <button
-                                     onClick={() => onAction?.(node.id, 'fuse-images')}
-                                     disabled={isWorking || taskGroups.every((tg: any) => tg.imageFused)}
+                                     onClick={(e) => {
+                                         e.stopPropagation();
+                                         console.log('[图片融合] 按钮被点击');
+                                         console.log('[图片融合] 当前任务组状态:', taskGroups.map(tg => ({
+                                             id: tg.id,
+                                             hasSplitShots: !!tg.splitShots,
+                                             splitShotsLength: tg.splitShots?.length || 0
+                                         })));
+                                         onAction?.(node.id, 'fuse-images');
+                                     }}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                     onPointerDownCapture={(e) => e.stopPropagation()}
+                                     disabled={isWorking || taskGroups.filter((tg: any) => tg.splitShots && tg.splitShots.length > 0).length === 0}
                                      className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-bold transition-all ${
-                                         isWorking || taskGroups.every((tg: any) => tg.imageFused)
+                                         isWorking || taskGroups.filter((tg: any) => tg.splitShots && tg.splitShots.length > 0).length === 0
                                              ? 'bg-white/5 text-slate-500 cursor-not-allowed'
                                              : 'bg-gradient-to-r from-purple-500 to-violet-500 text-white hover:shadow-lg hover:shadow-purple-500/20'
                                      }`}
+                                     title={taskGroups.filter((tg: any) => tg.splitShots && tg.splitShots.length > 0).length === 0 ? "请先生成分镜图" : "将分镜图拼接融合"}
                                  >
                                      🖼️ 图片融合
                                  </button>
                                  <button
-                                     onClick={() => onAction?.(node.id, 'generate-videos')}
+                                     onClick={(e) => {
+                                         e.stopPropagation();
+                                         onAction?.(node.id, 'generate-videos');
+                                     }}
+                                     onMouseDown={(e) => e.stopPropagation()}
+                                     onPointerDownCapture={(e) => e.stopPropagation()}
                                      disabled={isWorking || taskGroups.every((tg: any) => tg.generationStatus === 'completed')}
                                      className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-bold transition-all ${
                                          isWorking || taskGroups.every((tg: any) => tg.generationStatus === 'completed')

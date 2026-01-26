@@ -8,6 +8,7 @@ import { logAPICall } from './apiLogger';
 
 export interface FallbackConfig {
   maxAttempts?: number; // 最大尝试次数，默认 3
+  retryOnSameModel?: number; // 在同一模型上重试的次数，默认 0（失败即降级）
   onModelFallback?: (from: string, to: string, reason: string) => void; // 降级回调
   excludedModels?: string[]; // 永久排除的模型列表
   enableFallback?: boolean; // 是否启用自动降级，默认 true
@@ -131,6 +132,7 @@ export async function executeWithFallback<T>(
 ): Promise<ModelExecutionResult<T>> {
   const {
     maxAttempts = 3,
+    retryOnSameModel = 0,
     onModelFallback,
     excludedModels: initialExcluded = [],
     enableFallback = true
@@ -140,8 +142,10 @@ export async function executeWithFallback<T>(
   const excludedModels = [...initialExcluded];
   const fallbackChain: string[] = [currentModel];
   let lastError: string | undefined;
+  let attempt = 0;
+  let sameModelRetryCount = 0; // 在同一模型上的重试计数
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  while (attempt < maxAttempts) {
     // 检查是否应该跳过此模型
     if (shouldSkipModel(currentModel)) {
       const nextModel = getNextFallbackModel(currentModel, excludedModels);
@@ -163,11 +167,15 @@ export async function executeWithFallback<T>(
       currentModel = nextModel;
       excludedModels.push(currentModel);
       fallbackChain.push(currentModel);
+      sameModelRetryCount = 0; // 切换模型后重置计数
+      attempt++;
       continue;
     }
 
     try {
       // 尝试执行
+      console.log(`[ModelFallback] 尝试使用模型 ${currentModel} (第 ${attempt + 1} 次, 同模型重试 ${sameModelRetryCount}/${retryOnSameModel})`);
+
       const result = await executeModel(currentModel);
 
       // 成功 - 更新统计
@@ -197,6 +205,7 @@ export async function executeWithFallback<T>(
           modelName: modelInfo?.name,
           error: lastError,
           attempt: attempt + 1,
+          sameModelRetry: sameModelRetryCount,
           isQuotaError: isQuotaError(error),
           maxAttempts
         }
@@ -204,6 +213,22 @@ export async function executeWithFallback<T>(
 
       // 检查是否为配额错误
       const isQuota = isQuotaError(error);
+
+      // 如果是配额错误，立即切换到下一个模型（不重试）
+      if (isQuota) {
+        console.warn(`[ModelFallback] 模型 ${currentModel} 配额用完，准备降级`);
+      } else {
+        // 非配额错误，检查是否需要在同一模型上重试
+        if (sameModelRetryCount < retryOnSameModel) {
+          sameModelRetryCount++;
+          attempt++;
+          console.log(`[ModelFallback] 模型 ${currentModel} 调用失败，在同一模型上重试 (${sameModelRetryCount}/${retryOnSameModel})`);
+          continue;
+        }
+      }
+
+      // 达到同一模型的最大重试次数，或配额错误，切换到下一个模型
+      sameModelRetryCount = 0; // 重置计数
 
       if (!enableFallback || attempt >= maxAttempts - 1) {
         // 不启用降级或已达到最大尝试次数
@@ -242,8 +267,10 @@ export async function executeWithFallback<T>(
       excludedModels.push(currentModel);
 
       // 切换到下一个模型
+      console.log(`[ModelFallback] 从 ${currentModel} 降级到 ${nextModel}`);
       currentModel = nextModel;
       fallbackChain.push(currentModel);
+      attempt++;
     }
   }
 

@@ -291,11 +291,9 @@ async function handleGenerateExpression(
       charName,
       async () => {
         // 使用自定义提示词或使用promptManager生成提示词
-        let exprPrompt: string;
         let expressionPromptPair: { zh: string; en: string };
 
         if (customPrompt) {
-          exprPrompt = customPrompt;
           expressionPromptPair = {
             zh: customPrompt,
             en: customPrompt
@@ -303,7 +301,6 @@ async function handleGenerateExpression(
         } else {
           // 使用promptManager生成中英文提示词，传递风格类型
           expressionPromptPair = promptManager.buildExpressionPrompt(stylePrompt, state.profile, undefined, styleType);
-          exprPrompt = expressionPromptPair.zh; // 使用中文版本生成
         }
 
         // 存储提示词到state（通过直接更新内部状态）
@@ -318,19 +315,52 @@ async function handleGenerateExpression(
 
         console.log('[CharacterAction] Generating expression with model:', initialModel);
 
-        const images = await generateImageWithFallback(
-          exprPrompt,
-          initialModel,
-          [],
-          { aspectRatio: '1:1', count: 1 },
-          { nodeId, nodeType: node.type }
-        );
+        // 添加文字检测和重试逻辑
+        let exprImages: string[] = [];
+        let hasText = true;
+        let attempt = 0;
+        const MAX_ATTEMPTS = 3;
 
-        if (!images || images.length === 0) {
+        console.log('[CharacterAction] Starting expression generation with text detection, attempts:', MAX_ATTEMPTS);
+
+        while (hasText && attempt < MAX_ATTEMPTS) {
+          let currentPrompt = expressionPromptPair.zh;
+
+          if (attempt > 0) {
+            // 重试时加强负面提示词
+            currentPrompt = currentPrompt + " NO TEXT. NO LABELS. NO LETTERS. NO CHINESE CHARACTERS. NO ENGLISH TEXT. NO WATERMARKS. CLEAN IMAGE ONLY.";
+            console.log(`[CharacterAction] Retrying expression generation (Attempt ${attempt + 1}/${MAX_ATTEMPTS}) with enhanced negative prompt`);
+          }
+
+          exprImages = await generateImageWithFallback(
+            currentPrompt,
+            initialModel,
+            [],
+            { aspectRatio: '1:1', count: 1 },
+            { nodeId, nodeType: node.type }
+          );
+
+          if (exprImages.length > 0) {
+            hasText = await detectTextInImage(exprImages[0]);
+            if (hasText) {
+              console.log(`[CharacterAction] Text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+            } else {
+              console.log(`[CharacterAction] No text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Success!`);
+            }
+          }
+          attempt++;
+        }
+
+        if (!exprImages || exprImages.length === 0) {
           throw new Error('表情图生成失败：API未返回图片数据');
         }
 
-        return images[0];
+        // 如果最终还是有文字，警告用户但仍然返回图片
+        if (hasText) {
+          console.warn('[CharacterAction] Expression sheet still has text after all retries. Returning anyway.');
+        }
+
+        return exprImages[0];
       }
     );
 

@@ -45,6 +45,7 @@ export async function generateImageWithFallback(
     initialModel,
     {
       maxAttempts: models.length,
+      retryOnSameModel: 2, // 在同一模型上重试 2 次后，再降级到下一个模型
       excludedModels: [], // 不预先排除
       enableFallback: true,
       onModelFallback: (from, to, reason) => {
@@ -106,6 +107,7 @@ export async function generateVideoWithFallback(
     initialModel,
     {
       maxAttempts: models.length,
+      retryOnSameModel: 1, // 视频生成在同一模型上重试 1 次
       enableFallback: true,
       onModelFallback: (from, to, reason) => {
         console.log(`[视频生成] 模型降级: ${from} -> ${to} (${reason})`);
