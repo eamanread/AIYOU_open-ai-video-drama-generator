@@ -18,12 +18,12 @@ import {
   resetModelStats
 } from '../services/modelFallback';
 import { StorageSettingsPanel } from './StorageSettingsPanel';
-import { getSoraStorageConfig, saveSoraStorageConfig, getOSSConfig, saveOSSConfig, DEFAULT_SORA_MODELS, getSoraProvider, saveSoraProvider, getYunwuApiKey, getDayuapiApiKey, getKieApiKey, saveKieApiKey, getVideoPlatformApiKey, saveVideoPlatformApiKey } from '../services/soraConfigService';
+import { getSoraStorageConfig, saveSoraStorageConfig, getOSSConfig, saveOSSConfig, DEFAULT_SORA_MODELS, getSoraProvider, saveSoraProvider, getYunwuApiKey, getDayuapiApiKey, getKieApiKey, saveKieApiKey, getVideoPlatformApiKey, saveVideoPlatformApiKey, getYijiapiApiKey, saveYijiapiApiKey } from '../services/soraConfigService';
 import { testOSSConnection } from '../services/ossService';
 import { OSSConfig } from '../types';
 
 // API 提供商类型
-type SoraProviderType = 'sutu' | 'yunwu' | 'dayuapi' | 'kie';
+type SoraProviderType = 'sutu' | 'yunwu' | 'dayuapi' | 'kie' | 'yijiapi';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -68,6 +68,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const [yunwuApiKey, setYunwuApiKey] = useState('');
   const [dayuapiApiKey, setDayuapiApiKey] = useState('');
   const [kieApiKey, setKieApiKey] = useState('');
+  const [yijiapiApiKey, setYijiapiApiKey] = useState('');
   const [ossConfig, setOssConfig] = useState<OSSConfig>({
     provider: 'imgbb',
     imgbbApiKey: '',
@@ -81,6 +82,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const [showYunwuApiKey, setShowYunwuApiKey] = useState(false);
   const [showDayuapiApiKey, setShowDayuapiApiKey] = useState(false);
   const [showKieApiKey, setShowKieApiKey] = useState(false);
+  const [showYijiapiApiKey, setShowYijiapiApiKey] = useState(false);
   const [showOssHelp, setShowOssHelp] = useState(false);
 
   // 视频平台 API Key state
@@ -174,6 +176,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     const savedKieApiKey = getKieApiKey();
     if (savedKieApiKey) {
       setKieApiKey(savedKieApiKey);
+    }
+
+    // 加载一加API Key
+    const savedYijiapiApiKey = getYijiapiApiKey();
+    if (savedYijiapiApiKey) {
+      setYijiapiApiKey(savedYijiapiApiKey);
     }
 
     // 加载视频平台 API Keys
@@ -275,6 +283,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
       yunwuApiKey: yunwuApiKey,
       dayuapiApiKey: dayuapiApiKey,
       kieApiKey: kieApiKey,
+      yijiapiApiKey: yijiapiApiKey,
     });
 
     // 保存 OSS 配置
@@ -716,12 +725,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   <option value="yunwu">云雾 API (Yunwu)</option>
                   <option value="dayuapi">大洋芋 API (Dayuapi)</option>
                   <option value="kie">KIE AI API</option>
+                  <option value="yijiapi">一加API (Yijia)</option>
                 </select>
                 <p className="text-[10px] text-slate-500">
                   {soraProvider === 'sutu' ? '速推 API：原有接口，稳定性一般' :
                    soraProvider === 'yunwu' ? '云雾 API：新增接口，稳定性较好' :
                    soraProvider === 'dayuapi' ? '大洋芋 API：通过模型名称控制参数，支持 10/15/25 秒视频' :
-                   'KIE AI API：支持图生视频和文生视频，参数通过 input 对象传递'}
+                   soraProvider === 'kie' ? 'KIE AI API：支持图生视频和文生视频，参数通过 input 对象传递' :
+                   '一加API：支持文生视频，使用 size 参数控制分辨率'}
                 </p>
               </div>
 
@@ -846,6 +857,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
               )}
 
+              {/* 一加API Key */}
+              {soraProvider === 'yijiapi' && (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-300">一加API Key</span>
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        type={showYijiapiApiKey ? 'text' : 'password'}
+                        value={yijiapiApiKey}
+                        onChange={(e) => setYijiapiApiKey(e.target.value)}
+                        placeholder="输入一加API Key"
+                        className="w-full px-4 py-2.5 bg-black/20 border border-white/10 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-green-500/50"
+                      />
+                      <button
+                        onClick={() => setShowYijiapiApiKey(!showYijiapiApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                      >
+                        {showYijiapiApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    在 <a href="https://ai.yijiarj.cn" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">一加API官网</a> 获取 API Key
+                  </p>
+                </div>
+              )}
+
               {/* 视频平台 API Keys - 分镜视频生成节点专用 */}
               <div className="mt-8 space-y-4">
                 <div className="flex items-center gap-3">
@@ -937,6 +978,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                       <p className="font-medium text-white">KIE AI API</p>
                       <p className="text-[10px] text-slate-400 mt-1">
                         支持图生视频和文生视频，参数包装在 input 对象中，支持角色动画集成
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-2 h-2 bg-pink-500 rounded-full mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-white">一加API (Yijia)</p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        支持文生视频，使用 size 参数控制分辨率（如 1280x720），支持多种时长和比例
                       </p>
                     </div>
                   </div>

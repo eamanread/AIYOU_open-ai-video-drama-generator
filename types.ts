@@ -30,6 +30,21 @@ export enum NodeStatus {
 
 export type VideoGenerationMode = 'DEFAULT' | 'CONTINUE' | 'CUT' | 'FIRST_LAST_FRAME' | 'CHARACTER_REF';
 
+// Storyboard grid types
+export type StoryboardGridType = '6' | '9' | '16' | '25';
+
+// Storyboard resolution types
+export type StoryboardResolution = '1k' | '2k' | '4k';
+
+// Grid configuration
+export interface GridConfig {
+  gridType: StoryboardGridType;
+  shotsPerGrid: number;
+  gridLayout: '2x3' | '3x3' | '4x4' | '5x5';
+  cols: number;
+  rows: number;
+}
+
 export interface StoryboardShot {
     id: string;
     subject: string;
@@ -88,6 +103,11 @@ export interface SplitStoryboardShot {
     sourcePage: number; // Which page this came from (0-based)
     panelIndex: number; // Which panel in the grid (0-8 for 9-grid, 0-5 for 6-grid)
     splitImage: string; // Base64 of the split individual panel image
+
+    // Resolution metadata
+    sourceResolution?: StoryboardResolution; // Source image resolution
+    sourceDimensions?: { width: number; height: number }; // Source image dimensions
+    splitDimensions?: { width: number; height: number }; // Split panel dimensions
 
     // From DetailedStoryboardShot - 使用标准影视术语
     scene: string;
@@ -214,8 +234,9 @@ export interface AppNode {
     // Storyboard Image Grid (for STORYBOARD_IMAGE nodes)
     storyboardGridImages?: string[]; // Array of grid images (supports multiple pages)
     storyboardGridImage?: string; // Deprecated: use storyboardGridImages instead (kept for backward compatibility)
-    storyboardGridType?: '9' | '6'; // Grid layout type: 9-panel (3x3) or 6-panel (2x3)
+    storyboardGridType?: StoryboardGridType; // Grid layout type: 6-panel (2x3), 9-panel (3x3), 16-panel (4x4), 25-panel (5x5)
     storyboardPanelOrientation?: '16:9' | '9:16'; // Panel orientation: landscape or portrait
+    storyboardResolution?: StoryboardResolution; // Resolution: 1k, 2k, 4k
     storyboardCurrentPage?: number; // Current page index (0-based)
     storyboardTotalPages?: number; // Total number of pages
 
@@ -344,7 +365,7 @@ export interface SoraStorageConfig {
   apiKey?: string;
 
   // API 提供商选择
-  provider?: 'sutu' | 'yunwu' | 'dayuapi' | 'kie';
+  provider?: 'sutu' | 'yunwu' | 'dayuapi' | 'kie' | 'yijiapi';
 
   // 速推 API Key（独立字段，与 apiKey 共享值）
   sutuApiKey?: string;
@@ -357,6 +378,9 @@ export interface SoraStorageConfig {
 
   // KIE AI API Key
   kieApiKey?: string;
+
+  // 一加API Key
+  yijiapiApiKey?: string;
 
   // 视频生成平台 API Keys（用于分镜视频生成节点）
   videoPlatformKeys?: {

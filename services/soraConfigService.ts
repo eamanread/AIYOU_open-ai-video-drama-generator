@@ -296,6 +296,9 @@ export function getProviderApiKey(): string | null {
   } else if (provider === 'kie') {
     // KIE AI API 使用独立的 kieApiKey 字段
     return config.kieApiKey || null;
+  } else if (provider === 'yijiapi') {
+    // 一加API 使用独立的 yijiapiApiKey 字段
+    return config.yijiapiApiKey || null;
   }
 
   return null;
@@ -319,6 +322,8 @@ export function saveProviderApiKey(provider: SoraProviderType, apiKey: string): 
     config.dayuapiApiKey = apiKey;
   } else if (provider === 'kie') {
     config.kieApiKey = apiKey;
+  } else if (provider === 'yijiapi') {
+    config.yijiapiApiKey = apiKey;
   }
 
   saveSoraStorageConfig(config);
@@ -387,6 +392,22 @@ export function getKieApiKey(): string | null {
  */
 export function saveKieApiKey(apiKey: string): void {
   saveProviderApiKey('kie', apiKey);
+}
+
+/**
+ * 获取一加API Key
+ * @returns 一加API Key，如果未配置则返回 null
+ */
+export function getYijiapiApiKey(): string | null {
+  const config = getSoraStorageConfig();
+  return config.yijiapiApiKey || null;
+}
+
+/**
+ * 保存一加API Key
+ */
+export function saveYijiapiApiKey(apiKey: string): void {
+  saveProviderApiKey('yijiapi', apiKey);
 }
 
 // ============================================================
