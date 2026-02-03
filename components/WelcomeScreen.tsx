@@ -7,7 +7,6 @@
 
 // components/WelcomeScreen.tsx
 import React from 'react';
-import { MousePointerClick } from 'lucide-react';
 import { useLanguage } from '../src/i18n/LanguageContext';
 import { Galaxy } from './Galaxy';
 
@@ -84,15 +83,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ visible }) => {
             }
           }
         `}</style>
-      </div>
-
-      {/* 提示信息 */}
-      <div className="flex items-center gap-2 mb-6 text-zinc-500 text-xs font-medium tracking-wide opacity-60">
-        <div className="px-1.5 py-0.5 rounded-md bg-zinc-800/50 border border-zinc-700/50 text-[10px] flex items-center gap-1">
-          <MousePointerClick size={10} />
-          <span>{t.actions.doubleClick}</span>
-        </div>
-        <span>{t.actions.canvasHint}</span>
       </div>
     </div>
   );
