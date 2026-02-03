@@ -37,15 +37,18 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ visible }) => {
           rotation={[1.0, 0.0]}
           starSpeed={0.5}
           density={1}
-          hueShift={220}
+          hueShift={140}
+          disableAnimation={false}
           speed={1.0}
           mouseInteraction={true}
           glowIntensity={0.3}
-          saturation={0.6}
+          saturation={0.0}
           mouseRepulsion={true}
           twinkleIntensity={0.3}
           rotationSpeed={0.1}
           repulsionStrength={2}
+          autoCenterRepulsion={0}
+          transparent={true}
         />
       </div>
 
@@ -55,7 +58,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ visible }) => {
           <img
             src="/logo.png"
             alt="AIYOU Logo"
-            className="h-48 md:h-64 object-contain drop-shadow-2xl"
+            className="h-40 md:h-52 object-contain drop-shadow-2xl"
           />
         </div>
 
