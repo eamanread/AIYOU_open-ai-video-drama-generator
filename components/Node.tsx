@@ -5199,7 +5199,8 @@ const NodeComponent: React.FC<NodeProps> = ({
                     {/* Operation Area: Edit & Export Buttons */}
                     <div
                         className="flex flex-col gap-2 p-2 border-t border-white/5"
-                        onMouseEnter={handleMouseEnter}  // 保持操作区显示
+                        onMouseEnter={handleMouseEnter}  // 进入操作区时保持显示
+                        onMouseLeave={handleMouseLeave}  // 离开操作区时重新开始倒计时
                     >
                         <div className="flex items-center justify-between px-1">
                             <span className="text-[9px] text-slate-400">
