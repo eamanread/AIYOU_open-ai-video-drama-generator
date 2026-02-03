@@ -2,6 +2,9 @@
  * Sora 2 API 服务
  * 封装 Sora 2 文/图生视频 API 调用
  * 支持多个 API 提供商（速创、云雾等）
+ *
+ * @developer 光波 (a@ggbo.com)
+ * @copyright Copyright (c) 2025 光波. All rights reserved.
  */
 
 import { SoraTaskGroup, SplitStoryboardShot, Sora2UserConfig } from '../types';

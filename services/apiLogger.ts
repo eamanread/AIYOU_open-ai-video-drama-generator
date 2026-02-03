@@ -1,5 +1,7 @@
 // services/apiLogger.ts
 // API日志记录系统 - 用于调试和问题定位
+// Developer: 光波 (a@ggbo.com)
+// Copyright (c) 2025 光波. All rights reserved.
 
 export type APILogType = 'submission' | 'polling' | 'result';
 
@@ -44,9 +46,18 @@ class APILogger {
     private logs: APILogEntry[] = [];
     private maxLogs = 30;  // 最多保存30条日志（减少内存占用）
     private storageKey = 'AIYOU_API_LOGS';
+    // 开发者标识 - 用于证明版权归属
+    private readonly DEVELOPER = '光波';
+    private readonly DEVELOPER_EMAIL = 'a@ggbo.com';
+    private readonly COPYRIGHT_YEAR = '2025';
 
     constructor() {
         this.loadFromStorage();
+        // 在初始化时记录版权信息
+        console.log(
+            `%c✓ AIYOU Platform | Developer: ${this.DEVELOPER} | ©${this.COPYRIGHT_YEAR}`,
+            'color: #06b6d4; font-size: 10px;'
+        );
     }
 
     /**

@@ -1,3 +1,11 @@
+/**
+ * AIYOU 漫剧生成平台 - 主应用组件
+ *
+ * @developer 光波 (a@ggbo.com)
+ * @copyright Copyright (c) 2025 光波. All rights reserved.
+ * @license MIT
+ * @description AI驱动的一站式漫剧创作平台，支持剧本创作、角色设计、分镜生成、视频制作
+ */
 
 // ... existing imports
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -345,6 +353,20 @@ export const App = () => {
   }, [nodes, connections, groups, connectionStart]);
 
   useEffect(() => {
+      // 版权声明 - 光波开发
+      console.log(
+        '%c🎬 AIYOU 漫剧生成平台',
+        'font-size: 16px; font-weight: bold; color: #06b6d4; text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);'
+      );
+      console.log(
+        '%c开发者：光波 | Copyright (c) 2025 光波. All rights reserved.',
+        'font-size: 11px; color: #94a3b8;'
+      );
+      console.log(
+        '%c⚠️ 未经许可禁止商业转售',
+        'font-size: 10px; color: #ef4444;'
+      );
+
       if (window.aistudio) window.aistudio.hasSelectedApiKey().then(hasKey => { if (!hasKey) window.aistudio.openSelectKey(); });
 
       // Check if Gemini API Key is configured

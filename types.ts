@@ -1,3 +1,10 @@
+/**
+ * AIYOU 漫剧生成平台 - 类型定义
+ *
+ * @developer 光波 (a@ggbo.com)
+ * @copyright Copyright (c) 2025 光波. All rights reserved.
+ * @license MIT
+ */
 
 // ============================================================
 // LLM & 图片生成 API 提供商相关类型
