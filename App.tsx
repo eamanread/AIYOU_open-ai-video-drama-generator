@@ -1560,15 +1560,31 @@ export const App = () => {
 
   // --- Video Editor Handler ---
   const handleOpenVideoEditor = useCallback((nodeId: string) => {
+    console.log('[handleOpenVideoEditor] Opening video editor for node:', nodeId);
+
     const node = nodesRef.current.find(n => n.id === nodeId);
-    if (!node || node.type !== NodeType.VIDEO_EDITOR) {
-      console.error('[handleOpenVideoEditor] Invalid node:', node?.type);
+    if (!node) {
+      console.error('[handleOpenVideoEditor] Node not found:', nodeId);
       return;
     }
 
+    if (node.type !== NodeType.VIDEO_EDITOR) {
+      console.error('[handleOpenVideoEditor] Invalid node type:', node.type);
+      return;
+    }
+
+    console.log('[handleOpenVideoEditor] Node inputs:', node.inputs);
+
     // 获取连接的视频
     const sources: VideoSource[] = [];
+
+    if (!nodeQuery.current) {
+      console.error('[handleOpenVideoEditor] nodeQuery.current is null');
+      return;
+    }
+
     const connectedNodes = nodeQuery.current.getNodesByIds(node.inputs);
+    console.log('[handleOpenVideoEditor] Connected nodes:', connectedNodes.length);
 
     for (const inputNode of connectedNodes) {
       let videoUrl = '';
@@ -1645,6 +1661,8 @@ export const App = () => {
     }
 
     console.log('[handleOpenVideoEditor] Found video sources:', sources.length);
+    console.log('[handleOpenVideoEditor] Sources:', sources);
+
     setVideoEditorSources(sources);
     setIsVideoEditorOpen(true);
   }, []);
@@ -4956,27 +4974,33 @@ COMPOSITION REQUIREMENTS:
                       <span className="text-xs font-medium">重连存储</span>
                   </button>
               )}
-              <button
-                  onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl text-slate-300 hover:text-white hover:border-white/20 transition-all hover:scale-105"
-                  title={t.settings.language}
-              >
-                  <Languages size={16} />
-                  <span className="text-xs font-medium">{language === 'zh' ? t.settings.english : t.settings.chinese}</span>
-              </button>
+              {/* 翻译按钮 - 只在进入画布后显示 */}
+              {nodes.length > 0 && (
+                  <button
+                      onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl text-slate-300 hover:text-white hover:border-white/20 transition-all hover:scale-105"
+                      title={t.settings.language}
+                  >
+                      <Languages size={16} />
+                      <span className="text-xs font-medium">{language === 'zh' ? t.settings.english : t.settings.chinese}</span>
+                  </button>
+              )}
           </div>
 
-          <div className="absolute bottom-8 right-8 flex items-center gap-3 px-4 py-2 bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <button onClick={() => canvas.setScale(s => Math.max(0.2, s - 0.1))} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10"><Minus size={14} strokeWidth={3} /></button>
-              <div className="flex items-center gap-2 min-w-[100px]">
-                   <input type="range" min="0.2" max="3" step="0.1" value={canvas.scale} onChange={(e) => canvas.setScale(parseFloat(e.target.value))} className="w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg hover:[&::-webkit-slider-thumb]:scale-125 transition-all" />
-                   <span className="text-[10px] font-bold text-slate-400 w-8 text-right tabular-nums cursor-pointer hover:text-white" onClick={() => canvas.setScale(1)} title="Reset Zoom">{Math.round(canvas.scale * 100)}%</span>
+          {/* 放大缩小按钮 - 只在进入画布后显示 */}
+          {nodes.length > 0 && (
+              <div className="absolute bottom-8 right-8 flex items-center gap-3 px-4 py-2 bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-full shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <button onClick={() => canvas.setScale(s => Math.max(0.2, s - 0.1))} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10"><Minus size={14} strokeWidth={3} /></button>
+                  <div className="flex items-center gap-2 min-w-[100px]">
+                       <input type="range" min="0.2" max="3" step="0.1" value={canvas.scale} onChange={(e) => canvas.setScale(parseFloat(e.target.value))} className="w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg hover:[&::-webkit-slider-thumb]:scale-125 transition-all" />
+                       <span className="text-[10px] font-bold text-slate-400 w-8 text-right tabular-nums cursor-pointer hover:text-white" onClick={() => canvas.setScale(1)} title="Reset Zoom">{Math.round(canvas.scale * 100)}%</span>
+                  </div>
+                  <button onClick={() => canvas.setScale(s => Math.min(3, s + 0.1))} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10"><Plus size={14} strokeWidth={3} /></button>
+                  <button onClick={handleFitView} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10 ml-2 border-l border-white/10 pl-3" title="适配视图">
+                      <Scan size={14} strokeWidth={3} />
+                  </button>
               </div>
-              <button onClick={() => canvas.setScale(s => Math.min(3, s + 0.1))} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10"><Plus size={14} strokeWidth={3} /></button>
-              <button onClick={handleFitView} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-white/10 ml-2 border-l border-white/10 pl-3" title="适配视图">
-                  <Scan size={14} strokeWidth={3} />
-              </button>
-          </div>
+          )}
       </div>
     </div>
   );
