@@ -13,6 +13,7 @@ import {
   getCameraMovementByName
 } from '../constants/storyboardTerms';
 import { getUserDefaultModel } from './modelConfig';
+import { generateTextWithProvider } from './aiAdapter';
 
 export interface EnhancedShotFields {
   shotSize: string;
@@ -73,10 +74,12 @@ export async function enhanceShotWithAI(shot: SplitStoryboardShot | DetailedStor
 请为这个镜头选择最合适的景别、拍摄角度和运镜方式。`;
 
   try {
-    const { generateText } = await import('./geminiService');
-    const response = await generateText(
-      systemPrompt + '\n\n' + userPrompt,
-      getUserDefaultModel('text')
+    const response = await generateTextWithProvider(
+      userPrompt,
+      {
+        systemPrompt,
+        model: getUserDefaultModel('text'),
+      }
     );
 
     // 解析 JSON 响应

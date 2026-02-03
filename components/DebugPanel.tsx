@@ -15,13 +15,22 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
     const [filter, setFilter] = useState<'all' | 'success' | 'error' | 'pending'>('all');
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
+    const [hidePollingLogs, setHidePollingLogs] = useState(true);  // 默认隐藏轮询日志
 
     // 加载日志
     const loadLogs = () => {
         const allLogs = apiLogger.getLogs();
-        const filteredLogs = filter === 'all'
+
+        // 先按状态过滤
+        let filteredLogs = filter === 'all'
             ? allLogs
             : apiLogger.filterLogs({ status: filter as APILogEntry['status'] });
+
+        // 再过滤轮询日志（如果启用）
+        if (hidePollingLogs) {
+            filteredLogs = filteredLogs.filter(log => log.logType !== 'polling');
+        }
+
         setLogs(filteredLogs);
     };
 
@@ -33,14 +42,14 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
         const interval = setInterval(loadLogs, 2000); // 每2秒刷新一次
 
         return () => clearInterval(interval);
-    }, [isOpen, filter, autoRefresh]);
+    }, [isOpen, filter, autoRefresh, hidePollingLogs]);
 
     // 初始加载
     useEffect(() => {
         if (isOpen) {
             loadLogs();
         }
-    }, [isOpen, filter]);
+    }, [isOpen, filter, hidePollingLogs]);
 
     if (!isOpen) return null;
 
@@ -168,6 +177,17 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
                             </button>
                         ))}
                     </div>
+
+                    {/* 隐藏轮询日志切换 */}
+                    <label className="flex items-center gap-2 ml-auto text-xs text-slate-400 cursor-pointer hover:text-slate-300">
+                        <input
+                            type="checkbox"
+                            checked={hidePollingLogs}
+                            onChange={(e) => setHidePollingLogs(e.target.checked)}
+                            className="rounded"
+                        />
+                        隐藏轮询查询
+                    </label>
                 </div>
 
                 {/* Logs List */}
@@ -197,6 +217,11 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
                                                     <span className="text-sm font-semibold text-white">
                                                         {log.apiName}
                                                     </span>
+                                                    {log.platform && (
+                                                        <span className="px-2 py-0.5 text-xs bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+                                                            {log.platform}
+                                                        </span>
+                                                    )}
                                                     {log.nodeType && (
                                                         <span className="px-2 py-0.5 text-xs bg-cyan-500/20 text-cyan-300 rounded">
                                                             {log.nodeType}

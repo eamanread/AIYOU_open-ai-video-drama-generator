@@ -372,7 +372,21 @@ export const getUserPriority = (category: ModelCategory): string[] => {
     try {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return parsed;
+        // 确保数组元素都是字符串（模型 ID）
+        // 如果存储的是对象数组，提取 id 字段
+        const stringArray = parsed.map((item: any) => {
+          if (typeof item === 'string') {
+            return item;
+          } else if (item && typeof item === 'object' && item.id) {
+            return item.id;
+          }
+          return null;
+        }).filter((item: any) => item !== null);
+
+        if (stringArray.length > 0) {
+          console.log(`[getUserPriority] Loaded priority for ${category}:`, stringArray);
+          return stringArray;
+        }
       }
     } catch (e) {
       console.warn('Failed to parse user priority:', e);
@@ -380,7 +394,9 @@ export const getUserPriority = (category: ModelCategory): string[] => {
   }
 
   // 返回默认优先级
-  return getModelsByPriority(category).map(m => m.id);
+  const defaultPriority = getModelsByPriority(category).map(m => m.id);
+  console.log(`[getUserPriority] Using default priority for ${category}:`, defaultPriority);
+  return defaultPriority;
 };
 
 // 保存用户配置的优先级

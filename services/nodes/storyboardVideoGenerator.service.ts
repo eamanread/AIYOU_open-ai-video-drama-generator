@@ -5,7 +5,7 @@
 
 import { AppNode, NodeType, SplitStoryboardShot, StoryboardVideoGeneratorData, StoryboardVideoChildData } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
-import { buildProfessionalSoraPrompt } from '../soraPromptBuilder';
+import { promptBuilderFactory } from '../promptBuilders';
 import { generateVideoFromStoryboard } from '../videoGenerationService';
 import { fuseStoryboardWithCharacterViews } from '../../utils/imageFusion';
 import { uploadFileToOSS } from '../ossService';
@@ -130,8 +130,9 @@ export class StoryboardVideoGeneratorNodeService extends BaseNodeService {
 
     console.log(`[StoryboardVideoGenerator] 已选择 ${selectedShots.length} 个分镜`);
 
-    // 2. 调用 AI 生成提示词
-    const prompt = await buildProfessionalSoraPrompt(selectedShots);
+    // 2. 调用 AI 生成提示词（使用 GenericBuilder，不含黑色空镜）
+    const builder = promptBuilderFactory.getByNodeType('STORYBOARD_VIDEO_GENERATOR');
+    const prompt = await builder.build(selectedShots);
 
     console.log('[StoryboardVideoGenerator] 提示词生成完成:', prompt.substring(0, 100) + '...');
 

@@ -156,7 +156,7 @@ export class KieProvider implements SoraProvider {
         promptLength: params.prompt.length,
         promptPreview: params.prompt.substring(0, 200) + (params.prompt.length > 200 ? '...' : ''),
       },
-      context
+      { ...context, platform: this.displayName }
     );
   }
 
@@ -324,7 +324,7 @@ export class KieProvider implements SoraProvider {
         };
       },
       { taskId, hasProgressCallback: !!onProgress },
-      context
+      { ...context, platform: this.displayName, logType: 'polling' }
     );
   }
 }

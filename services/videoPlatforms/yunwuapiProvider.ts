@@ -180,9 +180,7 @@ export class YunwuAPIPlatformProvider implements VideoPlatformProvider {
     const requestBody: any = {
       model: actualModel,  // 使用 actualModel（子模型）而不是 submitModel
       prompt: params.prompt,
-      images: params.referenceImageUrl ? [params.referenceImageUrl] : [],  // ✅ 数组格式
-      aspect_ratio: params.config.aspect_ratio,  // ✅ 直接传递
-      duration: parseInt(params.config.duration)
+      images: params.referenceImageUrl ? [params.referenceImageUrl] : []  // ✅ 数组格式
     };
 
     // sora 特有参数
@@ -191,13 +189,32 @@ export class YunwuAPIPlatformProvider implements VideoPlatformProvider {
       requestBody.size = params.config.quality === 'hd' ? 'large' : 'small';
       requestBody.watermark = false;
       requestBody.private = true;
-      delete requestBody.aspect_ratio;  // sora 使用 orientation 而不是 aspect_ratio
     }
 
     // veo 特有参数
     if (model === 'veo') {
       requestBody.enhance_prompt = true;  // 中文转英文
       requestBody.enable_upsample = true;
+
+      // ⚠️ aspect_ratio 仅对 veo3 系列支持
+      // 检查子模型是否为 veo3 系列（包括 veo3, veo3-fast, veo3-pro, veo3-fast-frames, veo3-frames, veo3-pro-frames, veo3.1, veo3.1-fast, veo3.1-pro）
+      const isVeo3Series = actualModel.startsWith('veo3') || actualModel.startsWith('veo3.1');
+
+      if (isVeo3Series) {
+        requestBody.aspect_ratio = params.config.aspect_ratio;
+        console.log(`[YunwuAPI] ✅ veo3系列，添加 aspect_ratio: ${params.config.aspect_ratio}`);
+      } else {
+        console.log(`[YunwuAPI] ⚠️ veo2系列不支持 aspect_ratio，已跳过此参数 (模型: ${actualModel})`);
+      }
+
+      // ❌ Veo API 不支持 duration 参数，完全删除
+      // 删除后的效果：不同子模型会生成不同默认时长的视频
+    }
+
+    // runway 特有参数
+    if (model === 'runway') {
+      // runway 不支持 aspect_ratio，使用 ratio 参数
+      requestBody.ratio = params.config.aspect_ratio === '16:9' ? '16:9' : '9:16';
     }
 
     console.log(`[YunwuAPI] 统一格式请求:`, JSON.stringify(requestBody, null, 2));

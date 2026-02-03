@@ -3,6 +3,7 @@ import { GoogleGenAI, GenerateContentResponse, Type, Modality, Part, FunctionDec
 import { SmartSequenceItem, VideoGenerationMode, StoryboardShot, CharacterProfile } from "../types";
 import { logAPICall } from "./apiLogger";
 import { getUserDefaultModel } from "./modelConfig";
+import { llmProviderManager } from "./llmProviders";
 
 // Get API Key from localStorage only
 const getApiKey = (): string | null => {
@@ -16,7 +17,25 @@ const getApiKey = (): string | null => {
   return null;
 };
 
+// Get client from provider manager
 export const getClient = () => {
+  return llmProviderManager.getCurrentProvider().getClient();
+};
+
+// 检查当前提供商是否为 Gemini（用于高级功能）
+const requireGeminiProvider = (featureName: string): void => {
+  const currentProvider = llmProviderManager.getCurrentProviderType();
+  if (currentProvider !== 'gemini') {
+    throw new Error(
+        `"${featureName}" 功能需要使用 Gemini 官方 API。\n\n` +
+        `当前提供商：${llmProviderManager.getCurrentProvider().getName()}\n\n` +
+        `请切换到 Gemini API (Google Official) 以使用此功能。`
+    );
+  }
+};
+
+// Legacy function - kept for backward compatibility
+export const getLegacyClient = () => {
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY_NOT_CONFIGURED");
@@ -197,7 +216,10 @@ export const extractLastFrame = (videoSrc: string): Promise<string> => {
     });
 };
 
-export const detectTextInImage = async (imageBase64: string): Promise<boolean> => {
+export const detectTextInImage = async (
+    imageBase64: string,
+    context?: { nodeId?: string; nodeType?: string }
+): Promise<boolean> => {
     const ai = getClient();
     const prompt = `
     Analyze this image carefully.
@@ -907,98 +929,9 @@ export const generateImageFromText = async (
     return logAPICall(
         'generateImageFromText',
         async () => {
-            const ai = getClient();
-
-            // Use the actual model ID provided
-            const effectiveModel = model;
-
-            console.log(`[generateImageFromText] Using Gemini generateContent API for model: ${effectiveModel}`);
-
-            // Prepare Contents
-            const parts: Part[] = [];
-
-            // Add Input Images if available (Image-to-Image)
-            for (const base64 of inputImages) {
-                const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
-                const mimeType = base64.match(/^data:(image\/\w+);base64,/)?.[1] || "image/png";
-                parts.push({ inlineData: { data: cleanBase64, mimeType } });
-            }
-
-            // Prepend aspect ratio requirement to prompt if specified
-            let enhancedPrompt = prompt;
-            if (options.aspectRatio) {
-                const ratioMap: Record<string, string> = {
-                    '16:9': 'landscape orientation (16:9 aspect ratio, width greater than height)',
-                    '9:16': 'portrait orientation (9:16 aspect ratio, height greater than width)',
-                    '4:3': 'landscape orientation (4:3 aspect ratio, standard 4K resolution)',
-                    '3:4': 'portrait orientation (3:4 aspect ratio, standard 4K resolution)',
-                    '3:2': 'landscape orientation (3:2 aspect ratio)',
-                    '2:3': 'portrait orientation (2:3 aspect ratio)',
-                    '1:1': 'square orientation (1:1 aspect ratio, equal width and height)',
-                    '21:9': 'ultrawide cinematic orientation (21:9 aspect ratio)',
-                };
-                const ratioDesc = ratioMap[options.aspectRatio] || options.aspectRatio;
-                enhancedPrompt = `IMPORTANT: Generate the image in ${ratioDesc}.\n\n${prompt}`;
-            }
-
-            parts.push({ text: enhancedPrompt });
-
-            try {
-                // Build generation config with aspect ratio and resolution support
-                const generationConfig: any = {};
-
-                // Add image generation config if aspect ratio or resolution is specified
-                if (options.aspectRatio || options.resolution) {
-                    generationConfig.imageGenerationConfig = {};
-
-                    if (options.aspectRatio) {
-                        generationConfig.imageGenerationConfig.aspectRatio = options.aspectRatio;
-                    }
-
-                    if (options.resolution) {
-                        // Map resolution to image_size parameter (must be "1K", "2K", or "4K")
-                        generationConfig.imageGenerationConfig.image_size = options.resolution;
-                    }
-                }
-
-                const response = await ai.models.generateContent({
-                    model: effectiveModel,
-                    contents: { parts },
-                    generationConfig
-                });
-
-                // Parse Response for Images
-                const images: string[] = [];
-                if (response.candidates?.[0]?.content?.parts) {
-                    for (const part of response.candidates[0].content.parts) {
-                        if (part.inlineData && part.inlineData.data) {
-                            const mime = part.inlineData.mimeType || 'image/png';
-                            images.push(`data:${mime};base64,${part.inlineData.data}`);
-                        }
-                    }
-                }
-
-                if (images.length === 0) {
-                    // Check for finish reason to provide better error message
-                    const finishReason = response.candidates?.[0]?.finishReason;
-
-                    if (finishReason === 'SAFETY') {
-                        throw new Error("Image generation blocked by safety filter. The prompt may contain sensitive content. Please try a different description.");
-                    } else if (finishReason === 'IMAGE_SAFETY') {
-                        throw new Error("Image generation blocked by safety filter. Please try a different visual style or description.");
-                    } else if (finishReason) {
-                        throw new Error(`Image generation failed: ${finishReason}. Please try again.`);
-                    } else {
-                        throw new Error("No images generated. The model may not support image generation or the response was empty.");
-                    }
-                }
-
-                console.log(`[generateImageFromText] Generated ${images.length} images`);
-                return images;
-            } catch (e: any) {
-                console.error("Image Gen Error:", e);
-                throw new Error(getErrorMessage(e));
-            }
+            // 使用提供商管理器生成图片
+            console.log(`[generateImageFromText] Using provider manager for model: ${model}`);
+            return llmProviderManager.generateImages(prompt, model, inputImages, options);
         },
         {
             model,
@@ -1022,6 +955,7 @@ export const generateVideo = async (
     return logAPICall(
         'generateVideo',
         async () => {
+            requireGeminiProvider('视频生成');
             const ai = getClient();
 
             const qualitySuffix = ", cinematic lighting, highly detailed, photorealistic, 4k, smooth motion, professional color grading";
@@ -1145,6 +1079,7 @@ export const analyzeVideo = async (
     return logAPICall(
         'analyzeVideo',
         async () => {
+            requireGeminiProvider('视频分析');
             const ai = getClient();
             let inlineData: any = null;
 
@@ -1178,6 +1113,7 @@ export const analyzeVideo = async (
 };
 
 export const editImageWithText = async (imageBase64: string, prompt: string, model: string): Promise<string> => {
+     requireGeminiProvider('图片编辑');
      const imgs = await generateImageFromText(prompt, model, [imageBase64], { count: 1 });
      return imgs[0];
 };
@@ -1193,18 +1129,18 @@ export const planStoryboard = async (
     return logAPICall(
         'planStoryboard',
         async () => {
-            const ai = getClient();
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                `Context: ${context}\n\nUser Idea: ${prompt}`,
+                effectiveModel,
+                {
                     responseMimeType: 'application/json',
                     systemInstruction: STORYBOARD_INSTRUCTION
-                },
-                contents: { parts: [{ text: `Context: ${context}\n\nUser Idea: ${prompt}` }] }
-            });
+                }
+            );
 
             try {
-                return JSON.parse(response.text || "[]");
+                return JSON.parse(response || "[]");
             } catch {
                 return [];
             }
@@ -1214,7 +1150,7 @@ export const planStoryboard = async (
             prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
             contextLength: context.length
         },
-        apiContext
+        { ...apiContext, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1228,8 +1164,6 @@ export const generateScriptPlanner = async (
     return logAPICall(
         'generateScriptPlanner',
         async () => {
-            const ai = getClient();
-
             // 动态计算参数
             const episodes = config.episodes || 10;
             const episodesPerChapter = 4; // 每章包含4集（2-5集范围）
@@ -1280,22 +1214,26 @@ export const generateScriptPlanner = async (
             }
 
             const fullPrompt = `
-    核心创意: ${prompt}
-    主题: ${config.theme || 'N/A'}
-    类型: ${config.genre || 'N/A'}
-    背景: ${config.setting || 'N/A'}
-    预估集数: ${config.episodes || 10}
-    单集时长: ${config.duration || 1} 分钟
-    视觉风格: ${config.visualStyle || 'N/A'}${refinedReference}
-    `;
+核心创意: ${prompt}
+主题: ${config.theme || 'N/A'}
+类型: ${config.genre || 'N/A'}
+背景: ${config.setting || 'N/A'}
+预估集数: ${config.episodes || 10}
+单集时长: ${config.duration || 1} 分钟
+视觉风格: ${config.visualStyle || 'N/A'}${refinedReference}
+`;
 
-            const response = await ai.models.generateContent({
-                model: model || getUserDefaultModel('text'),
-                config: { systemInstruction: systemInstruction },
-                contents: { parts: [{ text: fullPrompt }] }
-            });
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const effectiveModel = model || getUserDefaultModel('text');
+            const response = await llmProviderManager.generateContent(
+                fullPrompt,
+                effectiveModel,
+                {
+                    systemInstruction: systemInstruction
+                }
+            );
 
-            return response.text || "";
+            return response;
         },
         {
             model: model || getUserDefaultModel('text'),
@@ -1303,7 +1241,7 @@ export const generateScriptPlanner = async (
             config,
             hasRefinedInfo: !!refinedInfo && Object.keys(refinedInfo).length > 0
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1321,8 +1259,6 @@ export const generateScriptEpisodes = async (
     return logAPICall(
         'generateScriptEpisodes',
         async () => {
-            const ai = getClient();
-
             // 解析剧本大纲中的角色和物品信息
             const globalCharacters = extractCharactersFromOutline(outline);
             const globalItems = extractItemsFromOutline(outline);
@@ -1361,19 +1297,21 @@ ${previousEpisodesSummary}
 2. 物品名称必须严格使用【全局物品设定】中的标准名称
 3. 剧情应承接【前序剧集摘要】中的事件和角色状态
 4. 每集的continuityNote要明确说明与剧情主线的衔接关系
-    `;
+`;
 
-            const response = await ai.models.generateContent({
-                model: model || getUserDefaultModel('text'),
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const effectiveModel = model || getUserDefaultModel('text');
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     systemInstruction: SCRIPT_EPISODE_INSTRUCTION,
                     responseMimeType: 'application/json'
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                const text = response?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
                 return JSON.parse(text);
             } catch (e) {
                 console.error("Failed to parse script episodes JSON", e);
@@ -1389,7 +1327,7 @@ ${previousEpisodesSummary}
             hasModification: !!modificationSuggestion,
             hasPreviousEpisodes: !!previousEpisodes && previousEpisodes.length > 0
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1432,8 +1370,6 @@ export const generateDetailedStoryboard = async (
         'generateDetailedStoryboard',
         async () => {
             console.log('[generateDetailedStoryboard] Starting generation with:', { episodeTitle, totalDuration, visualStyle });
-
-            const ai = getClient();
 
             // 计算所需分镜数量
             const minShots = Math.floor(totalDuration / 3);  // 最低：按3秒/镜
@@ -1480,17 +1416,18 @@ Style: ${visualStyle}
 
             console.log(`[generateDetailedStoryboard] 📝 Prompt准备完成，要求生成 ${minShots}-${recommendedShots} 个分镜`);
 
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     systemInstruction: DETAILED_STORYBOARD_INSTRUCTION,
                     responseMimeType: 'application/json'
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                const text = response?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
                 console.log('[generateDetailedStoryboard] Received response, parsing...');
 
                 const rawShots = JSON.parse(text);
@@ -1610,7 +1547,7 @@ Style: ${visualStyle}
             visualStyle,
             contentLength: episodeContent.length
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1725,7 +1662,6 @@ export const generateCinematicStoryboard = async (
     return logAPICall(
         'generateCinematicStoryboard',
         async () => {
-            const ai = getClient();
             const prompt = `
     Episode Script: ${episodeScript}
     Shot Count: ${shotCount}
@@ -1733,17 +1669,18 @@ export const generateCinematicStoryboard = async (
     Visual Style: ${style}
     `;
 
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     systemInstruction: CINEMATIC_STORYBOARD_INSTRUCTION,
                     responseMimeType: 'application/json'
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+                const text = response?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
                 const rawShots = JSON.parse(text);
 
                 return rawShots.map((shot: any, index: number) => ({
@@ -1770,7 +1707,7 @@ export const generateCinematicStoryboard = async (
             style,
             scriptLength: episodeScript.length
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1802,7 +1739,7 @@ export const orchestrateVideoPrompt = async (
             prompt: userPrompt.substring(0, 200) + (userPrompt.length > 200 ? '...' : ''),
             imageCount: images.length
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1820,6 +1757,7 @@ export const generateAudio = async (
     return logAPICall(
         'generateAudio',
         async () => {
+            requireGeminiProvider('音频生成');
             const ai = getClient();
 
             const parts: Part[] = [{ text: prompt }];
@@ -1869,6 +1807,7 @@ export const transcribeAudio = async (
     return logAPICall(
         'transcribeAudio',
         async () => {
+            requireGeminiProvider('音频转录');
             const ai = getClient();
             const mime = audioBase64.match(/^data:(audio\/\w+);base64,/)?.[1] || 'audio/wav';
             const data = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
@@ -1897,6 +1836,7 @@ export const connectLiveSession = async (
     onAudioData: (base64: string) => void,
     onClose: () => void
 ) => {
+    requireGeminiProvider('实时会话');
     const ai = getClient();
     const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
     const sessionPromise = ai.live.connect({
@@ -1933,17 +1873,17 @@ export const extractCharactersFromText = async (
     return logAPICall(
         'extractCharactersFromText',
         async () => {
-            const ai = getClient();
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                `提取以下剧本内容中的所有角色名：\n${text}`,
+                effectiveModel,
+                {
                     responseMimeType: 'application/json',
                     systemInstruction: CHARACTER_EXTRACTION_INSTRUCTION
-                },
-                contents: { parts: [{ text: `提取以下剧本内容中的所有角色名：\n${text}` }] }
-            });
+                }
+            );
             try {
-                const json = JSON.parse(response.text || "[]");
+                const json = JSON.parse(response || "[]");
                 return Array.isArray(json) ? json : [];
             } catch {
                 return [];
@@ -1953,7 +1893,7 @@ export const extractCharactersFromText = async (
             model: effectiveModel,
             textLength: text.length
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -1970,7 +1910,6 @@ export const generateCharacterProfile = async (
     return logAPICall(
         'generateCharacterProfile',
         async () => {
-            const ai = getClient();
             const prompt = `
     Role Name: ${name}
     Script Context: ${contextText}
@@ -1978,17 +1917,18 @@ export const generateCharacterProfile = async (
     ${customDesc ? `Additional User Description: ${customDesc}` : 'Auto-complete details based on context.'}
     `;
 
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     responseMimeType: 'application/json',
                     systemInstruction: CHARACTER_PROFILE_INSTRUCTION
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                const raw = JSON.parse(response.text || "{}");
+                const raw = JSON.parse(response || "{}");
                 // Ensure shape
                 return {
                     id: `char-${Date.now()}-${Math.random()}`,
@@ -2016,7 +1956,7 @@ export const generateCharacterProfile = async (
             hasCustomDesc: !!customDesc,
             contextLength: contextText.length
         },
-        apiContext
+        { ...apiContext, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -2033,7 +1973,6 @@ export const generateSupportingCharacter = async (
     return logAPICall(
         'generateSupportingCharacter',
         async () => {
-            const ai = getClient();
             const prompt = `
     Role Name: ${name}
     Script Context: ${contextText}
@@ -2041,17 +1980,18 @@ export const generateSupportingCharacter = async (
     This is a SUPPORTING CHARACTER - keep it simple and concise.
     `;
 
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     responseMimeType: 'application/json',
                     systemInstruction: SUPPORTING_CHARACTER_INSTRUCTION
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                const raw = JSON.parse(response.text || "{}");
+                const raw = JSON.parse(response || "{}");
                 // Return simplified profile
                 return {
                     id: `char-${Date.now()}-${Math.random()}`,
@@ -2074,7 +2014,7 @@ export const generateSupportingCharacter = async (
             hasStyleContext: !!styleContext,
             contextLength: contextText.length
         },
-        apiContext
+        { ...apiContext, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -2102,26 +2042,26 @@ export const analyzeDrama = async (
     return logAPICall(
         'analyzeDrama',
         async () => {
-            const ai = getClient();
             const prompt = `
-    请分析以下剧集：${dramaName}
+请分析以下剧集：${dramaName}
 
-    注意：
-    1. 如果你对该剧有所了解，请提供详细的分析。
-    2. 如果你不了解该剧，请在 dramaIntroduction 字段中明确说明，并在其他字段中提供通用的分析框架建议。
-    `;
+注意：
+1. 如果你对该剧有所了解，请提供详细的分析。
+2. 如果你不了解该剧，请在 dramaIntroduction 字段中明确说明，并在其他字段中提供通用的分析框架建议。
+`;
 
-            const response = await ai.models.generateContent({
-                model: effectiveModel,
-                config: {
+            // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+            const response = await llmProviderManager.generateContent(
+                prompt,
+                effectiveModel,
+                {
                     responseMimeType: 'application/json',
                     systemInstruction: DRAMA_ANALYZER_INSTRUCTION
-                },
-                contents: { parts: [{ text: prompt }] }
-            });
+                }
+            );
 
             try {
-                let text = response.text?.trim() || "{}";
+                let text = response?.trim() || "{}";
 
                 // 尝试多种方式提取JSON
                 let raw: any = null;
@@ -2185,7 +2125,7 @@ export const analyzeDrama = async (
             model: effectiveModel,
             dramaName
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -2261,8 +2201,6 @@ export const extractRefinedTags = async (
     return logAPICall(
         'extractRefinedTags',
         async () => {
-            const ai = getClient();
-
             // 构建提取提示词
             const fieldLabels: Record<string, string> = {
                 dramaIntroduction: '剧集介绍',
@@ -2300,16 +2238,53 @@ ${contentToExtract}
 请严格按照上述字段进行提取，只提取这些字段，不要添加其他字段。`;
 
             try {
-                const response = await ai.models.generateContent({
-                    model: effectiveModel,
-                    config: {
-                        responseMimeType: 'application/json',
-                        systemInstruction: DRAMA_REFINED_EXTRACTION_INSTRUCTION
-                    },
-                    contents: { parts: [{ text: prompt }] }
-                });
+                // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+                const response = await llmProviderManager.generateContent(
+                    `${DRAMA_REFINED_EXTRACTION_INSTRUCTION}\n\n${prompt}`,
+                    effectiveModel,
+                    {
+                        responseMimeType: 'application/json'
+                    }
+                );
 
-                const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "{}";
+                console.log('[extractRefinedTags] Raw response:', response);
+
+                // 改进的JSON清理逻辑
+                let text = response?.trim() || "{}";
+
+                // 移除markdown代码块标记
+                text = text.replace(/```json\s*/g, '');
+                text = text.replace(/```\s*/g, '');
+
+                // 移除可能的前导文字（比如 "JSON Ext" 之类的）
+                // 查找第一个 { 或 [
+                const firstBraceIndex = text.indexOf('{');
+                const firstBracketIndex = text.indexOf('[');
+                const startIndex = Math.min(
+                    firstBraceIndex !== -1 ? firstBraceIndex : Infinity,
+                    firstBracketIndex !== -1 ? firstBracketIndex : Infinity
+                );
+
+                if (startIndex !== Infinity) {
+                    text = text.substring(startIndex);
+                }
+
+                // 查找最后一个 } 或 ]
+                const lastBraceIndex = text.lastIndexOf('}');
+                const lastBracketIndex = text.lastIndexOf(']');
+                const endIndex = Math.max(
+                    lastBraceIndex !== -1 ? lastBraceIndex : -1,
+                    lastBracketIndex !== -1 ? lastBracketIndex : -1
+                );
+
+                if (endIndex !== -1) {
+                    text = text.substring(0, endIndex + 1);
+                }
+
+                text = text.trim();
+
+                console.log('[extractRefinedTags] Cleaned text:', text);
+
                 const extracted = JSON.parse(text);
 
                 // 动态构建返回对象，只包含用户选择的字段
@@ -2334,7 +2309,7 @@ ${contentToExtract}
             selectedFieldsCount: selectedFields.length,
             selectedFields
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 
@@ -2460,8 +2435,6 @@ export const generateStylePreset = async (
     return logAPICall(
         'generateStylePreset',
         async () => {
-            const ai = getClient();
-
             const isScene = presetType === 'SCENE';
             const systemInstruction = isScene ? SCENE_STYLE_INSTRUCTION : CHARACTER_STYLE_INSTRUCTION;
 
@@ -2484,16 +2457,16 @@ ${userInput || '无'}
 这段描述词将作为前缀，用于后续所有${isScene ? '场景' : '人物'}图像生成。`;
 
             try {
-                const response = await ai.models.generateContent({
-                    model: effectiveModel,
-                    config: {
-                        systemInstruction,
-                        temperature: 0.7
-                    },
-                    contents: { parts: [{ text: prompt }] }
-                });
+                // 使用 llmProviderManager.generateContent 而不是直接调用 getClient()
+                const response = await llmProviderManager.generateContent(
+                    prompt,
+                    effectiveModel,
+                    {
+                        systemInstruction
+                    }
+                );
 
-                let stylePrompt = response.text?.trim() || '';
+                let stylePrompt = response?.trim() || '';
 
                 // Remove markdown code blocks if present
                 stylePrompt = stylePrompt.replace(/```/g, '').replace(/^text\n/g, '').trim();
@@ -2526,7 +2499,7 @@ ${userInput || '无'}
             hasUserInput: !!userInput,
             hasUpstreamInfo: !!(upstreamStyleInfo.artStyle || upstreamStyleInfo.genre || upstreamStyleInfo.setting)
         },
-        context
+        { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
 

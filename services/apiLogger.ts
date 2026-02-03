@@ -1,12 +1,16 @@
 // services/apiLogger.ts
 // API日志记录系统 - 用于调试和问题定位
 
+export type APILogType = 'submission' | 'polling' | 'result';
+
 export interface APILogEntry {
     id: string;
     timestamp: number;
     apiName: string;          // API函数名称
     nodeId?: string;          // 关联的节点ID
     nodeType?: string;        // 节点类型
+    platform?: string;        // API平台提供商（如 yunwuapi, kie, yijiapi 等）
+    logType: APILogType;      // 日志类型：提交请求、轮询查询、最终结果
     request: {
         model?: string;
         prompt?: string;
@@ -51,9 +55,9 @@ class APILogger {
     startLog(
         apiName: string,
         request: APILogEntry['request'],
-        context?: { nodeId?: string; nodeType?: string }
+        context?: { nodeId?: string; nodeType?: string; platform?: string; logType?: APILogType }
     ): string {
-        const id = `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const id = `log-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
         const logEntry: APILogEntry = {
             id,
@@ -61,6 +65,8 @@ class APILogger {
             apiName,
             nodeId: context?.nodeId,
             nodeType: context?.nodeType,
+            platform: context?.platform,
+            logType: context?.logType || 'submission',  // 默认为提交类型
             request: { ...request },  // 保存完整的请求信息
             status: 'pending'
         };
@@ -419,7 +425,7 @@ export async function logAPICall<T>(
     apiName: string,
     apiCall: () => Promise<T>,
     request: APILogEntry['request'],
-    context?: { nodeId?: string; nodeType?: string }
+    context?: { nodeId?: string; nodeType?: string; platform?: string; logType?: APILogType }
 ): Promise<T> {
     const startTime = Date.now();
     const logId = apiLogger.startLog(apiName, request, context);

@@ -149,7 +149,7 @@ export class YijiapiProvider implements SoraProvider {
         },
         inputImagesCount: params.referenceImageUrl ? 1 : 0,
       },
-      context
+      { ...context, platform: this.displayName }
     );
   }
 
@@ -265,7 +265,7 @@ export class YijiapiProvider implements SoraProvider {
           hasProgressCallback: !!onProgress,
         },
       },
-      context
+      { ...context, platform: this.displayName, logType: 'polling' }
     );
   }
 }

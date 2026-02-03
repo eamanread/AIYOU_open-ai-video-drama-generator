@@ -11,7 +11,8 @@ import { CharacterLibrary } from './components/CharacterLibrary';
 import { CharacterDetailModal } from './components/CharacterDetailModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AppNode, NodeType, NodeStatus, Connection, ContextMenuState, Group, Workflow, SmartSequenceItem, CharacterProfile } from './types';
-import { generateImageFromText, generateVideo, analyzeVideo, editImageWithText, planStoryboard, orchestrateVideoPrompt, compileMultiFramePrompt, urlToBase64, extractLastFrame, generateAudio, generateScriptPlanner, generateScriptEpisodes, generateCinematicStoryboard, extractCharactersFromText, generateCharacterProfile, detectTextInImage, analyzeDrama } from './services/geminiService';
+import { generateVideo, analyzeVideo, editImageWithText, planStoryboard, orchestrateVideoPrompt, compileMultiFramePrompt, urlToBase64, extractLastFrame, generateAudio, generateScriptEpisodes, generateCinematicStoryboard, extractCharactersFromText, generateCharacterProfile, detectTextInImage, analyzeDrama, generateScriptPlanner } from './services/geminiService';
+import { generateImageWithProvider } from '../services/aiAdapter';
 import { getUserDefaultModel } from '../services/modelConfig';
 import { getGenerationStrategy } from './services/videoStrategies';
 import { saveToStorage, loadFromStorage } from './services/storage_old';
@@ -1012,9 +1013,9 @@ export const App = () => {
                   while (hasText && attempt < MAX_ATTEMPTS) {
                       if (attempt > 0) {
                           const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
-                          viewImages = await generateImageFromText(retryPrompt, getUserDefaultModel('image'), inputImages, { aspectRatio: '16:9', count: 1 });
+                          viewImages = await generateImageWithProvider(retryPrompt, { aspectRatio: '16:9', inputImages, model: getUserDefaultModel('image') });
                       } else {
-                          viewImages = await generateImageFromText(viewPrompt, getUserDefaultModel('image'), inputImages, { aspectRatio: '16:9', count: 1 });
+                          viewImages = await generateImageWithProvider(viewPrompt, { aspectRatio: '16:9', inputImages, model: getUserDefaultModel('image') });
                       }
 
                       if (viewImages.length > 0) {
@@ -1113,7 +1114,7 @@ export const App = () => {
               CRITICAL: NO TEXT, NO LABELS - Pure image only, no emotion labels (like "happy", "sad"), no numbers, no Chinese characters, no English text, no grid labels.
               Negative: ${negativePrompt}, text, labels, emotion names, numbers, letters, writing, watermark, signature.
               `;
-              const exprImages = await generateImageFromText(exprPrompt, getUserDefaultModel('image'), [], { aspectRatio: '1:1', count: 1 });
+              const exprImages = await generateImageWithProvider(exprPrompt, { aspectRatio: '1:1', model: getUserDefaultModel('image') });
               profile.expressionSheet = exprImages[0];
               profile.status = 'SUCCESS';
               
@@ -1230,7 +1231,7 @@ export const App = () => {
                           Composition: 3x3 grid.
                           Negative: ${negativePrompt}.
                           `;
-                          const exprImages = await generateImageFromText(exprPrompt, getUserDefaultModel('image'), [], { aspectRatio: '1:1', count: 1 });
+                          const exprImages = await generateImageWithProvider(exprPrompt, { aspectRatio: '1:1', model: getUserDefaultModel('image') });
                           profile.expressionSheet = exprImages[0];
 
                           profile.status = 'SUCCESS';
@@ -1374,17 +1375,27 @@ export const App = () => {
 
                           newNodes.forEach(async (n) => {
                                try {
-                                   const res = await generateImageFromText(n.data.prompt!, n.data.model!, inputImages, { aspectRatio: n.data.aspectRatio, resolution: n.data.resolution, count: 1 });
+                                   const res = await generateImageWithProvider(n.data.prompt!, {
+                                       aspectRatio: n.data.aspectRatio,
+                                       resolution: n.data.resolution,
+                                       inputImages,
+                                       model: n.data.model
+                                   });
                                    handleNodeUpdate(n.id, { image: res[0], images: res, status: NodeStatus.SUCCESS });
                                } catch (e: any) {
                                    handleNodeUpdate(n.id, { error: e.message, status: NodeStatus.ERROR });
                                }
                           });
-                          return; 
+                          return;
                       }
                   } catch (e) { console.warn("Storyboard planning failed", e); }
                }
-              const res = await generateImageFromText(prompt, node.data.model, inputImages, { aspectRatio: node.data.aspectRatio || '16:9', resolution: node.data.resolution, count: node.data.imageCount });
+              const res = await generateImageWithProvider(prompt, {
+                  aspectRatio: node.data.aspectRatio || '16:9',
+                  resolution: node.data.resolution,
+                  inputImages,
+                  model: node.data.model
+              });
               handleNodeUpdate(id, { image: res[0], images: res });
 
           } else if (node.type === NodeType.VIDEO_GENERATOR) {
@@ -1452,7 +1463,7 @@ export const App = () => {
                   Negative: ${shot.negative}.
                   `;
                   try {
-                      const imgs = await generateImageFromText(visualPrompt, getUserDefaultModel('image'), [], { aspectRatio: node.data.aspectRatio || '16:9', count: 1 });
+                      const imgs = await generateImageWithProvider(visualPrompt, { aspectRatio: node.data.aspectRatio || '16:9', model: getUserDefaultModel('image') });
                       if (imgs && imgs.length > 0) {
                           updatedShots[shotIndex] = { ...shot, imageUrl: imgs[0] };
                           handleNodeUpdate(id, { storyboardShots: [...updatedShots] });

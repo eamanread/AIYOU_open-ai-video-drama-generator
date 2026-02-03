@@ -4,7 +4,7 @@
  */
 
 import { indexedDBService, FileMetadataRecord } from '../storage/IndexedDBService';
-import { generateImageFromText } from '../geminiService';
+import { generateImageWithProvider } from '../aiAdapter';
 import { generateVideo, analyzeVideo } from '../geminiService';
 import { generateAudio } from '../geminiService';
 import type { FileStorageService } from '../storage/FileStorageService';
@@ -154,9 +154,9 @@ export class ApiInterceptorService {
       }
     }
 
-    // 第3步: 调用原始 API
+    // 第3步: 调用原始 API (支持 Google Gemini 和 云雾 API)
     console.log('[ApiInterceptor] 🌐 调用 API 生成图片');
-    const images = await generateImageFromText(
+    const images = await generateImageWithProvider(
       prompt,
       model,
       referenceImages,

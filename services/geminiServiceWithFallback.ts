@@ -1,11 +1,14 @@
 /**
  * Gemini API 服务 - 带自动降级功能
- * 包装原有的 geminiService 函数，添加智能模型降级
+ * 包装 geminiService 和 aiAdapter 函数，添加智能模型降级
+ * 支持 Google Gemini API 和 云雾 API
  */
 
 import * as GeminiService from './geminiService';
+import { generateImageWithProvider } from './aiAdapter';
 import { executeWithFallback, FallbackConfig, ModelExecutionResult } from './modelFallback';
 import { getUserPriority, ModelCategory } from './modelConfig';
+import { getAIProviderType } from './aiProviders';
 
 /**
  * 获取用户配置的优先级列表
@@ -16,6 +19,7 @@ function getPriorityList(category: ModelCategory): string[] {
 
 /**
  * 图片生成 - 带自动降级
+ * 根据配置自动选择使用 Google API 或 云雾 API
  */
 export async function generateImageWithFallback(
   prompt: string,
@@ -24,6 +28,21 @@ export async function generateImageWithFallback(
   options?: any,
   context?: { nodeId?: string; nodeType?: string }
 ): Promise<string[]> {
+  // 检查当前使用的 Provider
+  const providerType = getAIProviderType();
+
+  // 如果使用云雾 API，直接调用 Provider（云雾 API 有自己的降级逻辑）
+  if (providerType === 'yunwu') {
+    console.log('[图片生成] 使用云雾 API，跳过模型降级逻辑');
+    return await generateImageWithProvider(
+      prompt,
+      initialModel,
+      inputs,
+      options
+    );
+  }
+
+  // 使用 Google API，启用模型降级
   const priorityList = getPriorityList('image');
   const startIndex = priorityList.indexOf(initialModel);
 
@@ -34,12 +53,11 @@ export async function generateImageWithFallback(
 
   const result = await executeWithFallback<string[]>(
     async (modelId) => {
-      return await GeminiService.generateImageFromText(
+      return await generateImageWithProvider(
         prompt,
         modelId,
         inputs,
-        options,
-        context
+        options
       );
     },
     initialModel,

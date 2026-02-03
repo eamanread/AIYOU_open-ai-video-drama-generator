@@ -209,7 +209,18 @@ async function handleRetry(
             getUserDefaultModel('text'),
             { nodeId, nodeType: node.type }
           );
-          console.log('[CharacterAction] generateCharacterProfile returned for:', charName, 'hasBasicStats:', !!result?.basicStats);
+          console.log('[CharacterAction] generateCharacterProfile returned for:', charName, {
+            hasBasicStats: !!result?.basicStats,
+            basicStatsValue: result?.basicStats,
+            hasProfession: !!result?.profession,
+            professionValue: result?.profession,
+            hasPersonality: !!result?.personality,
+            personalityValue: result?.personality,
+            hasAppearance: !!result?.appearance,
+            appearanceValue: result?.appearance,
+            allKeys: result ? Object.keys(result) : 'null result',
+            fullResult: result
+          });
           return result;
         }
       );
@@ -331,6 +342,12 @@ async function handleGenerateExpression(
             currentPrompt = currentPrompt + " NO TEXT. NO LABELS. NO LETTERS. NO CHINESE CHARACTERS. NO ENGLISH TEXT. NO WATERMARKS. CLEAN IMAGE ONLY.";
             console.log(`[CharacterAction] Retrying expression generation (Attempt ${attempt + 1}/${MAX_ATTEMPTS}) with enhanced negative prompt`);
           }
+
+          console.log(`[CharacterAction] 🔧 Calling generateImageWithFallback with options:`, {
+            aspectRatio: '1:1',
+            count: 1,
+            promptPreview: currentPrompt.substring(0, 50)
+          });
 
           exprImages = await generateImageWithFallback(
             currentPrompt,
@@ -671,6 +688,12 @@ function updateNodeUI(
       if (c.threeViewSheet && c.threeViewSheet !== existing.threeViewSheet) {
         merged.threeViewSheet = c.threeViewSheet;
         console.log('[updateNodeUI] Updated threeViewSheet for', c.name, ':', c.threeViewSheet?.substring(0, 50));
+      }
+
+      // 关键修复：确保expressionSheet被正确合并
+      if (c.expressionSheet && c.expressionSheet !== existing.expressionSheet) {
+        merged.expressionSheet = c.expressionSheet;
+        console.log('[updateNodeUI] Updated expressionSheet for', c.name, ':', c.expressionSheet?.substring(0, 50));
       }
 
       // 特别处理：确保某些关键字段优先使用existing的值（如果manager中是undefined）

@@ -1,11 +1,11 @@
 /**
  * 图像生成节点服务
- * 负责调用 Google Gemini API 生成图像
+ * 负责调用 AI Provider API 生成图像 (支持 Google Gemini 和 云雾 API)
  */
 
 import { AppNode } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult, NodeStatus } from './baseNode.service';
-import { generateImageFromText } from '../geminiService';
+import { generateImageWithProvider } from '../aiAdapter';
 import { getUserDefaultModel } from '../modelConfig';
 
 /**
@@ -82,21 +82,16 @@ export class ImageGeneratorNodeService extends BaseNodeService {
         count: node.data.count || 1
       };
 
-      // 4. 调用 Gemini API
+      // 4. 调用 AI Provider API (支持 Google Gemini 和 云雾 API)
       console.log(`[ImageGeneratorNodeService] 开始生成图像:`, request);
 
-      const imageUrls = await generateImageFromText(
+      const imageUrls = await generateImageWithProvider(
         request.prompt,
         request.model,
         request.inputImages,
         {
           aspectRatio: request.aspectRatio,
-          resolution: request.resolution,
-          count: request.count
-        },
-        {
-          nodeId: node.id,
-          nodeType: this.nodeType
+          resolution: request.resolution
         }
       );
 

@@ -1,6 +1,7 @@
 
 import { AppNode, VideoGenerationMode } from '../types';
-import { extractLastFrame, urlToBase64, analyzeVideo, orchestrateVideoPrompt, generateImageFromText } from './geminiService';
+import { extractLastFrame, urlToBase64, analyzeVideo, orchestrateVideoPrompt } from './geminiService';
+import { generateImageWithProvider } from './aiAdapter';
 import { getUserDefaultModel } from './modelConfig';
 
 export interface StrategyResult {
@@ -179,11 +180,11 @@ export const processSceneDirector = async (
             - Only enhance existing pixels, do not invent new geometry.
             `;
             
-            const restoredImages = await generateImageFromText(
+            const restoredImages = await generateImageWithProvider(
                 restorationPrompt,
                 getUserDefaultModel('image'),
                 [inputImageForGeneration],
-                { aspectRatio: node.data.aspectRatio || '16:9', count: 1 }
+                { aspectRatio: node.data.aspectRatio || '16:9' }
             );
             
             if (restoredImages && restoredImages.length > 0) {

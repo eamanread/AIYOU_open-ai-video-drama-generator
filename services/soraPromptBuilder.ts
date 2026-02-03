@@ -1,18 +1,52 @@
 /**
  * Sora 2 提示词构建服务
  * 参考 OpenAI 官方 Sora 2 Prompting Guide 最佳实践
+ *
+ * @deprecated 此文件已废弃，请使用 services/promptBuilders 模块
+ * 使用 promptBuilderFactory.getByNodeType('SORA_VIDEO_GENERATOR').build() 代替
  */
 
 import { SplitStoryboardShot } from '../types';
 import { getUserDefaultModel } from './modelConfig';
 import { logAPICall } from './apiLogger';
-import { getClient } from './geminiService';
+import { llmProviderManager } from './llmProviders';
+
+// 导入新的构建器工厂（延迟导入以避免循环依赖）
+let promptBuilderFactory: any = null;
 
 /**
+ * @deprecated 使用 promptBuilderFactory.getByNodeType('SORA_VIDEO_GENERATOR').build() 代替
  * 构建专业的 Sora 2 视频提示词
  * 使用结构化方法，包含：风格、场景、摄影、动作、对话、音效
+ *
+ * @param shots 分镜列表
+ * @param options 可选配置参数（向后兼容）
+ * @returns Sora 2 提示词
  */
-export async function buildProfessionalSoraPrompt(shots: SplitStoryboardShot[]): Promise<string> {
+export async function buildProfessionalSoraPrompt(
+  shots: SplitStoryboardShot[],
+  options?: any
+): Promise<string> {
+  // 如果传入了配置参数，使用新的构建器架构
+  if (options && typeof options === 'object') {
+    if (!promptBuilderFactory) {
+      const module = await import('./promptBuilders');
+      promptBuilderFactory = module.promptBuilderFactory;
+    }
+
+    const builder = promptBuilderFactory.getByNodeType('SORA_VIDEO_GENERATOR');
+    return builder.build(shots, options);
+  }
+
+  // 向后兼容：如果没有传入配置参数，使用原始逻辑（不含黑色空镜）
+  return buildProfessionalSoraPromptLegacy(shots);
+}
+
+/**
+ * 原始的提示词构建逻辑（向后兼容）
+ * @deprecated 保留用于向后兼容，新代码应使用 promptBuilderFactory
+ */
+async function buildProfessionalSoraPromptLegacy(shots: SplitStoryboardShot[]): Promise<string> {
   if (shots.length === 0) {
     throw new Error('至少需要一个分镜');
   }
@@ -63,25 +97,21 @@ Scene: [第二个镜头的场景描述]`;
     return await logAPICall(
       'buildProfessionalSoraPrompt',
       async () => {
-        const ai = getClient();
         const modelName = getUserDefaultModel('text');
 
-        // 使用正确的 Gemini API 调用方式
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: {
-            parts: [
-              { text: systemPrompt + '\n\n' + userPrompt }
-            ]
+        // 使用 llmProviderManager 统一调用，支持 Gemini 和云雾 API
+        const text = await llmProviderManager.generateContent(
+          systemPrompt + '\n\n' + userPrompt,
+          modelName,
+          {
+            systemInstruction: systemPrompt
           }
-        });
+        );
 
-        let text = response.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) return buildBasicSoraPrompt(shots);
 
         // 清理多余内容
-        text = cleanSoraPrompt(text);
-        return text;
+        return cleanSoraPrompt(text);
       },
       {
         shotCount: shots.length,
@@ -89,7 +119,7 @@ Scene: [第二个镜头的场景描述]`;
         model: getUserDefaultModel('text'),
         promptPreview: userPrompt.substring(0, 200) + '...'
       },
-      { nodeId: 'sora-generator', nodeType: 'SORA_VIDEO_GENERATOR' }
+      { nodeId: 'sora-generator', nodeType: 'SORA_VIDEO_GENERATOR', platform: llmProviderManager.getCurrentProvider().getName() }
     );
   } catch (error: any) {
     console.error('[Sora Prompt Builder] AI enhancement failed, using basic prompt:', error);
@@ -292,7 +322,6 @@ ${soraPrompt}
   return await logAPICall(
     'removeSensitiveWords',
     async () => {
-      const ai = getClient();
       const modelName = getUserDefaultModel('text');
 
       console.log('[去敏感词] ===== 开始调用 AI 模型 =====');
@@ -302,26 +331,27 @@ ${soraPrompt}
 
       const startTime = Date.now();
 
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: {
-          parts: [
-            { text: systemPrompt + '\n\n' + userPrompt }
-          ]
+      // 使用 llmProviderManager 统一调用，支持 Gemini 和云雾 API
+      const response = await llmProviderManager.generateContent(
+        systemPrompt + '\n\n' + userPrompt,
+        modelName,
+        {
+          systemInstruction: systemPrompt
         }
-      });
+      );
 
       const endTime = Date.now();
       const duration = endTime - startTime;
 
       console.log('[去敏感词] AI 响应收到，耗时:', duration, 'ms');
-      console.log('[去敏感词] 响应状态:', response.candidates?.length > 0 ? '成功' : '失败');
+      console.log('[去敏感词] 响应状态:', response ? '成功' : '失败');
 
-      let text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
+      if (!response) {
         console.error('[去敏感词] ❌ AI 返回为空');
         throw new Error('AI未能返回优化后的提示词');
       }
+
+      let text = response;
 
       console.log('[去敏感词] AI 返回文本长度:', text.length);
 

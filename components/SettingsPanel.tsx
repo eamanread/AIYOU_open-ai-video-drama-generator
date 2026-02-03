@@ -19,6 +19,7 @@ import {
 } from '../services/modelFallback';
 import { StorageSettingsPanel } from './StorageSettingsPanel';
 import { getSoraStorageConfig, saveSoraStorageConfig, getOSSConfig, saveOSSConfig, DEFAULT_SORA_MODELS, getSoraProvider, saveSoraProvider, getYunwuApiKey, getDayuapiApiKey, getKieApiKey, saveKieApiKey, getVideoPlatformApiKey, saveVideoPlatformApiKey, getYijiapiApiKey, saveYijiapiApiKey } from '../services/soraConfigService';
+import { LLMProviderType } from '../types';
 import { testOSSConnection } from '../services/ossService';
 import { OSSConfig } from '../types';
 
@@ -61,6 +62,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const [errorMessage, setErrorMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'basic' | 'models' | 'storage' | 'sora'>('basic');
   const [isSaved, setIsSaved] = useState(false);
+
+  // LLM 提供商配置 state
+  const [llmProvider, setLlmProvider] = useState<LLMProviderType>('gemini');
+  const [yunwuLlmApiKey, setYunwuLlmApiKey] = useState('');
+  const [showYunwuLlmApiKey, setShowYunwuLlmApiKey] = useState(false);
 
   // Sora 配置 state
   const [soraProvider, setSoraProviderState] = useState<SoraProviderType>('sutu');
@@ -117,6 +123,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     if (savedKey) {
       setApiKey(savedKey);
       setValidationStatus('success');
+    }
+
+    // 加载 LLM 提供商配置
+    const savedLlmProvider = localStorage.getItem('LLM_API_PROVIDER') as LLMProviderType;
+    if (savedLlmProvider) {
+      setLlmProvider(savedLlmProvider);
+    }
+
+    const savedYunwuLlmKey = localStorage.getItem('YUNWU_API_KEY');
+    if (savedYunwuLlmKey) {
+      setYunwuLlmApiKey(savedYunwuLlmKey);
     }
 
     // 加载模型优先级配置（视频生成使用Sora2配置）
@@ -208,7 +225,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     setValidationStatus('idle');
 
     try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + key);
+      const url = llmProvider === 'gemini'
+        ? `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
+        : `https://yunwu.ai/v1beta/models?key=${key}`;
+
+      const response = await fetch(url);
 
       if (response.ok) {
         setValidationStatus('success');
@@ -231,7 +252,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
 
   // 保存 API Key
   const handleSaveApiKey = async () => {
-    const trimmedKey = apiKey.trim();
+    const trimmedKey = llmProvider === 'gemini' ? apiKey.trim() : yunwuLlmApiKey.trim();
 
     if (!trimmedKey) {
       setValidationStatus('error');
@@ -242,8 +263,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     const isValid = await validateApiKey(trimmedKey);
 
     if (isValid) {
-      localStorage.setItem('GEMINI_API_KEY', trimmedKey);
-      window.dispatchEvent(new CustomEvent('apiKeyUpdated', { detail: { apiKey: trimmedKey } }));
+      // 保存提供商选择
+      localStorage.setItem('LLM_API_PROVIDER', llmProvider);
+
+      // 保存对应的 API Key
+      if (llmProvider === 'gemini') {
+        localStorage.setItem('GEMINI_API_KEY', trimmedKey);
+      } else {
+        localStorage.setItem('YUNWU_API_KEY', trimmedKey);
+      }
+
+      window.dispatchEvent(new CustomEvent('llmProviderUpdated'));
       setTimeout(() => {
         onClose();
       }, 1000);
@@ -252,11 +282,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
 
   // 清除 API Key
   const handleClearApiKey = () => {
-    setApiKey('');
+    if (llmProvider === 'gemini') {
+      setApiKey('');
+    } else {
+      setYunwuLlmApiKey('');
+    }
     setValidationStatus('idle');
     setErrorMessage('');
-    localStorage.removeItem('GEMINI_API_KEY');
-    window.dispatchEvent(new CustomEvent('apiKeyUpdated', { detail: { apiKey: '' } }));
+
+    if (llmProvider === 'gemini') {
+      localStorage.removeItem('GEMINI_API_KEY');
+    } else {
+      localStorage.removeItem('YUNWU_API_KEY');
+    }
+
+    window.dispatchEvent(new CustomEvent('llmProviderUpdated'));
   };
 
   // 保存模型优先级设置
@@ -485,34 +525,119 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
         <div className="relative flex-1 overflow-y-auto custom-scrollbar">
           {activeTab === 'basic' ? (
             <div className="p-8 space-y-6">
-              {/* API Key 配置 */}
+              {/* API 提供商选择 */}
               <div className="space-y-4">
                 <label className="block">
-                  <span className="text-sm font-medium text-slate-300">Gemini API Key</span>
-                  <span className="text-xs text-slate-500 ml-2">必填</span>
+                  <span className="text-sm font-medium text-slate-300">API 提供商</span>
                 </label>
 
-                <div className="relative">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(e) => {
-                      setApiKey(e.target.value);
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      setLlmProvider('gemini');
                       setValidationStatus('idle');
                       setErrorMessage('');
                     }}
-                    placeholder="AIzaSy..."
-                    className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:bg-white/10 transition-all font-mono text-sm"
-                  />
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      llmProvider === 'gemini'
+                        ? 'border-cyan-500 bg-cyan-500/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="font-bold text-white">Gemini API</div>
+                    <div className="text-xs text-slate-400 mt-1">Google 官方接口</div>
+                  </button>
 
                   <button
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white transition-colors"
-                    type="button"
+                    onClick={() => {
+                      setLlmProvider('yunwu');
+                      setValidationStatus('idle');
+                      setErrorMessage('');
+                    }}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      llmProvider === 'yunwu'
+                        ? 'border-purple-500 bg-purple-500/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
                   >
-                    {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    <div className="font-bold text-white">云雾 API</div>
+                    <div className="text-xs text-slate-400 mt-1">第三方接口</div>
                   </button>
                 </div>
+              </div>
+
+              {/* API Key 配置 */}
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-300">
+                    {llmProvider === 'gemini' ? 'Gemini API Key' : '云雾 API Key'}
+                  </span>
+                  <span className="text-xs text-slate-500 ml-2">必填</span>
+                </label>
+
+                {/* Gemini API Key */}
+                {llmProvider === 'gemini' && (
+                  <>
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        value={apiKey}
+                        onChange={(e) => {
+                          setApiKey(e.target.value);
+                          setValidationStatus('idle');
+                          setErrorMessage('');
+                        }}
+                        placeholder="AIzaSy..."
+                        className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:bg-white/10 transition-all font-mono text-sm"
+                      />
+
+                      <button
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white transition-colors"
+                        type="button"
+                      >
+                        {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+
+                    <div className="text-xs text-slate-400 space-y-1">
+                      <p>• 访问 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Google AI Studio</a> 获取免费 API Key</p>
+                      <p>• API Key 将安全地存储在您的浏览器本地,不会上传到任何服务器</p>
+                    </div>
+                  </>
+                )}
+
+                {/* 云雾 API Key */}
+                {llmProvider === 'yunwu' && (
+                  <>
+                    <div className="relative">
+                      <input
+                        type={showYunwuLlmApiKey ? 'text' : 'password'}
+                        value={yunwuLlmApiKey}
+                        onChange={(e) => {
+                          setYunwuLlmApiKey(e.target.value);
+                          setValidationStatus('idle');
+                          setErrorMessage('');
+                        }}
+                        placeholder="输入云雾 API Key"
+                        className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500/50 focus:bg-white/10 transition-all font-mono text-sm"
+                      />
+
+                      <button
+                        onClick={() => setShowYunwuLlmApiKey(!showYunwuLlmApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white transition-colors"
+                        type="button"
+                      >
+                        {showYunwuLlmApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+
+                    <div className="text-xs text-slate-400 space-y-1">
+                      <p>• 访问 <a href="https://yunwu.ai" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">云雾官网</a> 获取 API Key</p>
+                      <p>• API Key 将安全地存储在您的浏览器本地,不会上传到任何服务器</p>
+                    </div>
+                  </>
+                )}
 
                 {validationStatus === 'success' && (
                   <div className="flex items-center gap-2 text-emerald-400 text-sm">
@@ -527,11 +652,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                     <span>{errorMessage}</span>
                   </div>
                 )}
-
-                <div className="text-xs text-slate-400 space-y-1">
-                  <p>• 访问 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Google AI Studio</a> 获取免费 API Key</p>
-                  <p>• API Key 将安全地存储在您的浏览器本地,不会上传到任何服务器</p>
-                </div>
               </div>
 
               {/* 自动降级说明 */}

@@ -5,7 +5,8 @@ import {
     MousePointer2, Download, Play, Image as ImageIcon,
     Activity, Wand2, Loader2, ChevronDown, Upload, Layers
 } from 'lucide-react';
-import { generateImageFromText, generateVideo } from '../services/geminiService';
+import { generateVideo } from '../services/geminiService';
+import { generateImageWithProvider } from '../services/aiAdapter';
 import { getUserDefaultModel } from '../services/modelConfig';
 
 interface SketchEditorProps {
@@ -210,8 +211,8 @@ export const SketchEditor: React.FC<SketchEditorProps> = ({ onClose, onGenerate 
                 Subject: ${prompt}.
                 Style: Minimalist stick figure or outline drawing, clear lines, no shading.
                 `;
-                
-                const res = await generateImageFromText(posePrompt, getUserDefaultModel('image'), [], { aspectRatio: '16:9', count: 1 });
+
+                const res = await generateImageWithProvider(posePrompt, { aspectRatio: '16:9', model: getUserDefaultModel('image') });
                 const imgUrl = res[0];
 
                 // 2. Draw Result onto Canvas
@@ -257,11 +258,13 @@ export const SketchEditor: React.FC<SketchEditorProps> = ({ onClose, onGenerate 
                     onGenerate('video', res.uri, prompt);
                 } else {
                     // Image (Sketch-to-Image)
-                    const res = await generateImageFromText(
+                    const res = await generateImageWithProvider(
                         prompt,
-                        getUserDefaultModel('image'),
-                        [compositeBase64],
-                        { aspectRatio: '16:9', count: 1 }
+                        {
+                            aspectRatio: '16:9',
+                            inputImages: [compositeBase64],
+                            model: getUserDefaultModel('image')
+                        }
                     );
                     onGenerate('image', res[0], prompt);
                 }

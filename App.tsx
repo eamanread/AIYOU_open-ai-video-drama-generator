@@ -1677,9 +1677,10 @@ export const App = () => {
                   setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.WORKING, data: { ...n.data, progress: '正在优化提示词...' } } : n));
 
                   try {
-                    // Use AI to generate enhanced prompt
-                    const { buildProfessionalSoraPrompt } = await import('./services/soraPromptBuilder');
-                    const newPrompt = await buildProfessionalSoraPrompt(taskGroup.splitShots, {
+                    // Use AI to generate enhanced prompt with Sora2 builder (includes black screen)
+                    const { promptBuilderFactory } = await import('./services/promptBuilders');
+                    const builder = promptBuilderFactory.getByNodeType('SORA_VIDEO_GENERATOR');
+                    const newPrompt = await builder.build(taskGroup.splitShots, {
                       includeBlackScreen: true,
                       blackScreenDuration: 0.5
                     });
@@ -2442,13 +2443,14 @@ export const App = () => {
                   const availableShots = node.data.availableShots || [];
                   const selectedShots = availableShots.filter((s: any) => selectedShotIds.includes(s.id));
 
-                  // Use SORA2 prompt builder for consistent format
-                  const { buildProfessionalSoraPrompt } = await import('./services/soraPromptBuilder');
+                  // Use Generic prompt builder for storyboard videos (no black screen)
+                  const { promptBuilderFactory } = await import('./services/promptBuilders');
+                  const builder = promptBuilderFactory.getByNodeType('STORYBOARD_VIDEO_GENERATOR');
 
                   console.log('[STORYBOARD_VIDEO_GENERATOR] Calling AI with', selectedShots.length, 'shots');
 
-                  // Generate prompt using SORA2 format (no black screen for storyboard videos)
-                  const generatedPrompt = await buildProfessionalSoraPrompt(selectedShots);
+                  // Generate prompt using Generic format (no black screen for storyboard videos)
+                  const generatedPrompt = await builder.build(selectedShots);
 
                   console.log('[STORYBOARD_VIDEO_GENERATOR] Generated prompt:', generatedPrompt);
 
@@ -4272,14 +4274,15 @@ COMPOSITION REQUIREMENTS:
                   shotsPerGroup: taskGroups.map(tg => tg.shotIds.length)
               });
 
-              // 4. Generate AI-enhanced Sora prompts for each task group
-              const { buildProfessionalSoraPrompt } = await import('./services/soraPromptBuilder');
+              // 4. Generate AI-enhanced Sora prompts for each task group using Sora2 builder (includes black screen)
+              const { promptBuilderFactory } = await import('./services/promptBuilders');
+              const sora2Builder = promptBuilderFactory.getByNodeType('SORA_VIDEO_GENERATOR');
 
               // Generate prompts asynchronously
               for (const tg of taskGroups) {
                   try {
                     console.log(`[SORA_VIDEO_GENERATOR] Generating professional prompt for task group ${tg.taskNumber}...`);
-                    tg.soraPrompt = await buildProfessionalSoraPrompt(tg.splitShots, {
+                    tg.soraPrompt = await sora2Builder.build(tg.splitShots, {
                       includeBlackScreen: true,
                       blackScreenDuration: 0.5
                     });
