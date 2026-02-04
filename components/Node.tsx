@@ -2077,25 +2077,15 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                       </select>
                                                   )}
 
-                                                  {!profile ? (
-                                                      isProcessing ? (
-                                                          <button
-                                                              disabled
-                                                              className="flex items-center gap-1 px-2 py-1 bg-orange-500/10 text-orange-300/50 text-[10px] font-bold rounded cursor-not-allowed"
-                                                          >
-                                                              <Loader2 size={10} className="animate-spin" />
-                                                              生成中
-                                                          </button>
-                                                      ) : (
-                                                          <button
-                                                              onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_SINGLE', name); }}
-                                                              className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold rounded transition-all"
-                                                          >
-                                                              <Sparkles size={10} />
-                                                              生成
-                                                          </button>
-                                                      )
-                                                  ) : null}
+                                                  {!profile && !isProcessing && (
+                                                      <button
+                                                          onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'GENERATE_SINGLE', name); }}
+                                                          className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold rounded transition-all"
+                                                      >
+                                                          <Sparkles size={10} />
+                                                          生成
+                                                      </button>
+                                                  )}
 
                                                   <button
                                                       onClick={(e) => { e.stopPropagation(); onCharacterAction?.(node.id, 'DELETE', name); }}
@@ -2122,14 +2112,33 @@ const NodeComponent: React.FC<NodeProps> = ({
                                           )}
 
                                           {isProcessing && (
-                                              <div className="bg-[#18181b] rounded-lg p-3 border border-white/5 flex items-center justify-center gap-2">
-                                                  <Loader2 size={12} className="animate-spin text-orange-400" />
-                                                  <span className="text-[10px] text-slate-400">
-                                                      {profile?.isGeneratingThreeView ? '正在生成三视图...' :
-                                                       profile?.isGeneratingExpression ? '正在生成九宫格表情...' :
-                                                       !profile?.expressionSheet ? '正在生成角色档案...' :
-                                                       '正在生成中...'}
-                                                  </span>
+                                              <div className="bg-[#18181b] rounded-lg p-3 border border-white/5 flex items-center justify-between gap-2">
+                                                  <div className="flex items-center gap-2">
+                                                      <Loader2 size={12} className="animate-spin text-orange-400" />
+                                                      <span className="text-[10px] text-slate-400">
+                                                          {profile?.isGeneratingThreeView ? '正在生成三视图...' :
+                                                           profile?.isGeneratingExpression ? '正在生成九宫格表情...' :
+                                                           !profile?.expressionSheet ? '正在生成角色档案...' :
+                                                           '正在生成中...'}
+                                                      </span>
+                                                  </div>
+                                                  <button
+                                                      onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          // 强制重新生成
+                                                          if (profile?.isGeneratingThreeView) {
+                                                              onCharacterAction?.(node.id, 'GENERATE_THREE_VIEW', name);
+                                                          } else if (profile?.isGeneratingExpression) {
+                                                              onCharacterAction?.(node.id, 'GENERATE_EXPRESSION', name);
+                                                          } else {
+                                                              onCharacterAction?.(node.id, 'RETRY', name);
+                                                          }
+                                                      }}
+                                                      className="flex items-center gap-1 px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] font-bold rounded transition-all"
+                                                  >
+                                                      <RotateCcw size={10} />
+                                                      重新生成
+                                                  </button>
                                               </div>
                                           )}
 

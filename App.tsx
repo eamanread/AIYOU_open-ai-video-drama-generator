@@ -3134,6 +3134,38 @@ export const App = () => {
               const generatedChars = node.data.generatedCharacters || [];
               const newGeneratedChars = [...generatedChars];
 
+              // 严格检查：只处理真正需要生成的角色
+              // 避免直接点击触发时重复生成已完成的角色
+              const charactersNeedingGeneration = names.filter(name => {
+                  const existingChar = generatedChars.find(c => c.name === name);
+                  // 只有以下情况需要处理：
+                  // 1. 角色不存在
+                  // 2. 角色处于 ERROR 状态（需要重新生成）
+                  // 3. 角色没有任何基础信息（profile为空）
+                  if (!existingChar) {
+                      return true; // 新角色，需要生成
+                  }
+                  // 对于 SUCCESS、IDLE、GENERATING、PENDING 状态的角色，跳过
+                  // 直接点击生成会通过 handleCharacterAction 单独处理，不通过这里
+                  console.log('[CHARACTER_NODE] Skipping character (already processed or processing):', name, 'status:', existingChar.status);
+                  return false;
+              });
+
+              // 如果没有需要生成的角色，直接返回
+              if (charactersNeedingGeneration.length === 0) {
+                  console.log('[CHARACTER_NODE] No characters need generation, skipping STEP 2');
+                  // 更新状态为 SUCCESS（如果所有角色都已完成）
+                  if (generatedChars.length > 0) {
+                      const allDone = generatedChars.every(c => 
+                          c.status === 'SUCCESS' || c.status === 'IDLE' || c.status === 'ERROR'
+                      );
+                      if (allDone) {
+                          setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
+                      }
+                  }
+                  return;
+              }
+
               // Extract style preset from inputs (priority: STYLE_PRESET > upstream context)
               const stylePresetNode = inputs.find(n => n.type === NodeType.STYLE_PRESET);
               let stylePrompt = '';
@@ -3147,38 +3179,11 @@ export const App = () => {
                   stylePrompt = getVisualPromptPrefix(style, genre, setting);
               }
 
-              for (const name of names) {
+              for (const name of charactersNeedingGeneration) {
                   const config = configs[name] || { method: 'AI_AUTO' };
+                  const existingChar = generatedChars.find(c => c.name === name);
 
-                  // Skip if already generated successfully
-                  const existingChar = newGeneratedChars.find(c => c.name === name);
-                  if (existingChar && existingChar.status === 'SUCCESS') {
-                      console.log('[CHARACTER_NODE] Skipping completed character:', name, 'status:', existingChar.status);
-                      continue;
-                  }
-
-                  // Skip if currently processing expressions or three views
-                  if (existingChar && (existingChar.isGeneratingExpression || existingChar.isGeneratingThreeView)) {
-                      console.log('[CHARACTER_NODE] Skipping character (generating sub-items):', name, 'status:', existingChar.status);
-                      continue;
-                  }
-
-                  // Skip if character exists and is in IDLE state (waiting for manual trigger)
-                  if (existingChar && existingChar.status === 'IDLE') {
-                      console.log('[CHARACTER_NODE] Skipping IDLE character (waiting for manual trigger):', name);
-                      continue;
-                  }
-
-                  // 对于 GENERATING、ERROR 或其他非成功状态，允许重新生成
-                  if (existingChar && existingChar.status === 'GENERATING') {
-                      console.log('[CHARACTER_NODE] Regenerating stuck character (was in GENERATING state):', name);
-                  } else if (existingChar && existingChar.status === 'ERROR') {
-                      console.log('[CHARACTER_NODE] Regenerating ERROR character:', name);
-                  } else if (existingChar && existingChar.status !== 'PENDING') {
-                      // 其他状态也允许重新生成，避免卡住
-                      console.log('[CHARACTER_NODE] Regenerating character with status:', name, existingChar.status);
-                  }
-
+                  // 设置为生成中状态
                   let charProfile = existingChar;
                   if (!charProfile) {
                       charProfile = { id: '', name, status: 'GENERATING' } as any;
@@ -3237,20 +3242,21 @@ export const App = () => {
                           newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e.message };
                       }
                   } else {
-                      // 主角：使用 GENERATE_ALL 自动完成完整流程
-                      console.log('[CHARACTER_NODE] Using GENERATE_ALL for main character:', name);
+                      // 主角：只生成基础信息，不自动生成表情和三视图
+                      // 表情和三视图需要用户额外点击生成
+                      console.log('[CHARACTER_NODE] Generating main character profile only:', name);
 
                       try {
                           console.log('[CHARACTER_NODE] About to call handleCharacterActionNew for:', name);
 
-                          // 调用 handleCharacterActionNew，它会处理完整的生成流程
+                          // 只调用 GENERATE_SINGLE，生成基础信息
                           await handleCharacterActionNew(
                               id,                  // nodeId
-                              'GENERATE_ALL',      // action
+                              'GENERATE_SINGLE',   // action ← 只生成基础信息
                               name,                // charName
-                              node,                // node ← 必须传递当前节点！
+                              node,                // node
                               nodesRef.current,    // allNodes
-                              handleNodeUpdate     // onNodeUpdate ← 必须传递更新函数！
+                              handleNodeUpdate     // onNodeUpdate
                           );
 
                           console.log('[CHARACTER_NODE] handleCharacterActionNew returned successfully for:', name);
@@ -3267,9 +3273,9 @@ export const App = () => {
                               }
                           }
 
-                          console.log('[CHARACTER_NODE] GENERATE_ALL completed for:', name);
+                          console.log('[CHARACTER_NODE] Profile generation completed for:', name);
                       } catch (e: any) {
-                          console.error('[CHARACTER_NODE] GENERATE_ALL failed for:', name, e);
+                          console.error('[CHARACTER_NODE] Profile generation failed for:', name, e);
                           console.error('[CHARACTER_NODE] Error stack:', e?.stack);
                           console.error('[CHARACTER_NODE] Error details:', {
                               message: e?.message,
@@ -3454,20 +3460,9 @@ export const App = () => {
                       newConnections.push({ from: node.id, to: newNodeId });
                   });
 
-                  const groupHeight = (episodes.length * nodeHeight) + ((episodes.length - 1) * gapY) + 60;
-                  const newGroup = {
-                      id: `g-eps-${Date.now()}`,
-                      title: `${node.data.selectedChapter} - 分集脚本`,
-                      x: startX - 30,
-                      y: startY - 30,
-                      width: 420 + 60,
-                      height: groupHeight
-                  };
-
                   saveHistory();
                   setNodes(prev => [...prev, ...newNodes]);
-                  setConnections(prev => [...prev, ...newConnections]);
-                  setGroups(prev => [...prev, newGroup]);
+                  setConnections(prev => [...prev, newConnections]);
                   
                   handleNodeUpdate(id, { generatedEpisodes: episodes });
               }

@@ -529,8 +529,9 @@ class PromptManager {
     styleType: '3D' | 'REAL' | 'ANIME' = '3D'
   ): { zh: string; en: string } {
     const basePrompt = customPrompt || this.getThreeViewPromptTemplate(styleType);
-    const appearance = profile?.appearance || profile?.basicStats || 'Detailed character appearance';
-    const stats = profile?.basicStats || profile?.profession || 'Character attributes';
+    // 优先使用 appearancePrompt（专门为生图准备的提示词），避免使用 basicStats 中可能包含状态性描述
+    const appearance = profile?.appearancePrompt || profile?.appearance || 'Detailed character appearance';
+    const stats = profile?.profession || 'Character attributes';
 
     // 根据风格类型生成对应的负面提示词
     let negativePrompt = '';

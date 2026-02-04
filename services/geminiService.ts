@@ -306,8 +306,8 @@ const CHARACTER_PROFILE_INSTRUCTION = `
 - 皮肤质感：delicate and smooth skin texture (not overly realistic), subsurface scattering，追求通透柔滑质感
 - 服饰细节：flowing fabric clothing, 纱质服饰的飘逸感
 - 发丝细节：individual hair strands, 发丝根根分明
-- 光影效果：soft ethereal lighting, cinematic rim lighting with cool blue tones, ambient occlusion
-- 角色气质：otherworldly gaze, elegant and cold demeanor，强化出尘气质
+- 光影效果：soft ethereal lighting, cinematic rim lighting with neutral tones, ambient occlusion
+- 角色气质：otherworldly gaze, elegant and natural demeanor，强化出尘气质
 - 严格禁止：2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D, overly photorealistic, hyper-realistic skin, photorealistic rendering
 
 **REAL真人风格（当 Visual Style 为 REAL 时）：**
@@ -361,8 +361,8 @@ const SUPPORTING_CHARACTER_INSTRUCTION = `
 - 皮肤质感：delicate and smooth skin texture (not overly realistic), subsurface scattering，追求通透柔滑质感
 - 服饰细节：flowing fabric clothing, 纱质服饰的飘逸感
 - 发丝细节：individual hair strands, 发丝根根分明
-- 光影效果：soft ethereal lighting, cinematic rim lighting with cool blue tones, ambient occlusion
-- 角色气质：otherworldly gaze, elegant and cold demeanor，强化出尘气质
+- 光影效果：soft ethereal lighting, cinematic rim lighting with neutral tones, ambient occlusion
+- 角色气质：otherworldly gaze, elegant and natural demeanor，强化出尘气质
 - 严格禁止：2D illustration, hand-drawn, anime 2D, flat shading, cel shading, toon shading, cartoon 2D, overly photorealistic, hyper-realistic skin, photorealistic rendering
 
 **REAL真人风格（当 Visual Style 为 REAL 时）：**

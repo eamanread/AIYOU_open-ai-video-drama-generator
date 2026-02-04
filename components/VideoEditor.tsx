@@ -43,7 +43,8 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({
   initialVideos = [],
   onExport
 }) => {
-  console.log('[VideoEditor] Render, isOpen:', isOpen, 'initialVideos:', initialVideos.length);
+  // 移除调试日志，避免控制台刷屏
+  // console.log('[VideoEditor] Render, isOpen:', isOpen, 'initialVideos:', initialVideos.length);
 
   // ==================== 状态管理 ====================
 

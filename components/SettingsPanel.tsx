@@ -1147,7 +1147,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
                 </button>
                 <button
                   onClick={handleSaveApiKey}
-                  disabled={isValidating || !apiKey.trim()}
+                  disabled={isValidating || (!apiKey.trim() && llmProvider === 'gemini') || (!yunwuLlmApiKey.trim() && llmProvider === 'yunwu')}
                   className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 rounded-xl shadow-lg hover:shadow-cyan-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isValidating ? (

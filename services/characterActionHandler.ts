@@ -297,89 +297,102 @@ async function handleGenerateExpression(
   }
 
   try {
-    const expressionSheet = await characterGenerationManager.generateExpression(
-      nodeId,
-      charName,
-      async () => {
-        // 使用自定义提示词或使用promptManager生成提示词
-        let expressionPromptPair: { zh: string; en: string };
+    // 添加超时保护（5分钟超时）
+    const timeoutMs = 5 * 60 * 1000;
+    let timeoutId: NodeJS.Timeout;
+    
+    const expressionSheet = await Promise.race([
+      characterGenerationManager.generateExpression(
+        nodeId,
+        charName,
+        async () => {
+          // 使用自定义提示词或使用promptManager生成提示词
+          let expressionPromptPair: { zh: string; en: string };
 
-        if (customPrompt) {
-          expressionPromptPair = {
-            zh: customPrompt,
-            en: customPrompt
-          };
-        } else {
-          // 使用promptManager生成中英文提示词，传递风格类型
-          expressionPromptPair = promptManager.buildExpressionPrompt(stylePrompt, state.profile, undefined, styleType);
-        }
-
-        // 存储提示词到state（通过直接更新内部状态）
-        const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
-        if (currentState) {
-          (currentState as any).expressionPromptZh = expressionPromptPair.zh;
-          (currentState as any).expressionPromptEn = expressionPromptPair.en;
-        }
-
-        const userPriority = getUserPriority('image');
-        const initialModel = userPriority[0] || 'gemini-3-pro-image-preview';
-
-        console.log('[CharacterAction] Generating expression with model:', initialModel);
-
-        // 添加文字检测和重试逻辑
-        let exprImages: string[] = [];
-        let hasText = true;
-        let attempt = 0;
-        const MAX_ATTEMPTS = 3;
-
-        console.log('[CharacterAction] Starting expression generation with text detection, attempts:', MAX_ATTEMPTS);
-
-        while (hasText && attempt < MAX_ATTEMPTS) {
-          let currentPrompt = expressionPromptPair.zh;
-
-          if (attempt > 0) {
-            // 重试时加强负面提示词
-            currentPrompt = currentPrompt + " NO TEXT. NO LABELS. NO LETTERS. NO CHINESE CHARACTERS. NO ENGLISH TEXT. NO WATERMARKS. CLEAN IMAGE ONLY.";
-            console.log(`[CharacterAction] Retrying expression generation (Attempt ${attempt + 1}/${MAX_ATTEMPTS}) with enhanced negative prompt`);
+          if (customPrompt) {
+            expressionPromptPair = {
+              zh: customPrompt,
+              en: customPrompt
+            };
+          } else {
+            // 使用promptManager生成中英文提示词，传递风格类型
+            expressionPromptPair = promptManager.buildExpressionPrompt(stylePrompt, state.profile, undefined, styleType);
           }
 
-          console.log(`[CharacterAction] 🔧 Calling generateImageWithFallback with options:`, {
-            aspectRatio: '1:1',
-            count: 1,
-            promptPreview: currentPrompt.substring(0, 50)
-          });
+          // 存储提示词到state（通过直接更新内部状态）
+          const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
+          if (currentState) {
+            (currentState as any).expressionPromptZh = expressionPromptPair.zh;
+            (currentState as any).expressionPromptEn = expressionPromptPair.en;
+          }
 
-          exprImages = await generateImageWithFallback(
-            currentPrompt,
-            initialModel,
-            [],
-            { aspectRatio: '1:1', count: 1 },
-            { nodeId, nodeType: node.type }
-          );
+          const userPriority = getUserPriority('image');
+          const initialModel = userPriority[0] || 'gemini-3-pro-image-preview';
 
-          if (exprImages.length > 0) {
-            hasText = await detectTextInImage(exprImages[0]);
-            if (hasText) {
-              console.log(`[CharacterAction] Text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
-            } else {
-              console.log(`[CharacterAction] No text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Success!`);
+          console.log('[CharacterAction] Generating expression with model:', initialModel);
+
+          // 添加文字检测和重试逻辑
+          let exprImages: string[] = [];
+          let hasText = true;
+          let attempt = 0;
+          const MAX_ATTEMPTS = 3;
+
+          console.log('[CharacterAction] Starting expression generation with text detection, attempts:', MAX_ATTEMPTS);
+
+          while (hasText && attempt < MAX_ATTEMPTS) {
+            let currentPrompt = expressionPromptPair.zh;
+
+            if (attempt > 0) {
+              // 重试时加强负面提示词
+              currentPrompt = currentPrompt + " NO TEXT. NO LABELS. NO LETTERS. NO CHINESE CHARACTERS. NO ENGLISH TEXT. NO WATERMARKS. CLEAN IMAGE ONLY.";
+              console.log(`[CharacterAction] Retrying expression generation (Attempt ${attempt + 1}/${MAX_ATTEMPTS}) with enhanced negative prompt`);
             }
+
+            console.log(`[CharacterAction] 🔧 Calling generateImageWithFallback with options:`, {
+              aspectRatio: '1:1',
+              count: 1,
+              promptPreview: currentPrompt.substring(0, 50)
+            });
+
+            exprImages = await generateImageWithFallback(
+              currentPrompt,
+              initialModel,
+              [],
+              { aspectRatio: '1:1', count: 1 },
+              { nodeId, nodeType: node.type }
+            );
+
+            if (exprImages.length > 0) {
+              hasText = await detectTextInImage(exprImages[0]);
+              if (hasText) {
+                console.log(`[CharacterAction] Text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+              } else {
+                console.log(`[CharacterAction] No text detected in expression sheet (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Success!`);
+              }
+            }
+            attempt++;
           }
-          attempt++;
-        }
 
-        if (!exprImages || exprImages.length === 0) {
-          throw new Error('表情图生成失败：API未返回图片数据');
-        }
+          if (!exprImages || exprImages.length === 0) {
+            throw new Error('表情图生成失败：API未返回图片数据');
+          }
 
-        // 如果最终还是有文字，警告用户但仍然返回图片
-        if (hasText) {
-          console.warn('[CharacterAction] Expression sheet still has text after all retries. Returning anyway.');
-        }
+          // 如果最终还是有文字，警告用户但仍然返回图片
+          if (hasText) {
+            console.warn('[CharacterAction] Expression sheet still has text after all retries. Returning anyway.');
+          }
 
-        return exprImages[0];
-      }
-    );
+          return exprImages[0];
+        }
+      ),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('表情图生成超时，请检查网络连接或API配置'));
+        }, timeoutMs);
+      })
+    ]).finally(() => {
+      clearTimeout(timeoutId);
+    }) as string;
 
     console.log('[CharacterAction] Expression sheet generated successfully:', charName);
     // 添加成功反馈
@@ -498,81 +511,94 @@ async function handleGenerateThreeView(
   }
 
   try {
-    const threeViewSheet = await characterGenerationManager.generateThreeView(
-      nodeId,
-      charName,
-      async () => {
-        // 使用自定义提示词或使用promptManager生成提示词
-        let viewPrompt: string;
-        let threeViewPromptPair: { zh: string; en: string };
+    // 添加超时保护（5分钟超时）
+    const timeoutMs = 5 * 60 * 1000;
+    let timeoutId: NodeJS.Timeout;
 
-        if (customPrompt) {
-          viewPrompt = customPrompt;
-          threeViewPromptPair = {
-            zh: customPrompt,
-            en: customPrompt
-          };
-        } else {
-          // 使用promptManager生成中英文提示词，传递风格类型
-          threeViewPromptPair = promptManager.buildThreeViewPrompt(stylePrompt, state.profile, undefined, styleType);
-          viewPrompt = threeViewPromptPair.zh; // 使用中文版本生成
-        }
+    const threeViewSheet = await Promise.race([
+      characterGenerationManager.generateThreeView(
+        nodeId,
+        charName,
+        async () => {
+          // 使用自定义提示词或使用promptManager生成提示词
+          let viewPrompt: string;
+          let threeViewPromptPair: { zh: string; en: string };
 
-        // 存储提示词到state
-        const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
-        if (currentState) {
-          (currentState as any).threeViewPromptZh = threeViewPromptPair.zh;
-          (currentState as any).threeViewPromptEn = threeViewPromptPair.en;
-        }
-
-        const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
-
-        // 使用九宫格表情作为参考图片
-        const inputImages = state.expressionSheet ? [state.expressionSheet] : [];
-
-        let viewImages: string[] = [];
-        let hasText = true;
-        let attempt = 0;
-        const MAX_ATTEMPTS = 3;
-
-        console.log('[CharacterAction] Starting 3-view generation, attempts:', MAX_ATTEMPTS);
-
-        while (hasText && attempt < MAX_ATTEMPTS) {
-          if (attempt > 0) {
-            const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
-            viewImages = await generateImageWithFallback(
-              retryPrompt,
-              getUserDefaultModel('image'),
-              inputImages,
-              { aspectRatio: '16:9', resolution: '1K', count: 1 },
-              { nodeId, nodeType: node.type }
-            );
+          if (customPrompt) {
+            viewPrompt = customPrompt;
+            threeViewPromptPair = {
+              zh: customPrompt,
+              en: customPrompt
+            };
           } else {
-            viewImages = await generateImageWithFallback(
-              viewPrompt,
-              getUserDefaultModel('image'),
-              inputImages,
-              { aspectRatio: '16:9', resolution: '1K', count: 1 },
-              { nodeId, nodeType: node.type }
-            );
+            // 使用promptManager生成中英文提示词，传递风格类型
+            threeViewPromptPair = promptManager.buildThreeViewPrompt(stylePrompt, state.profile, undefined, styleType);
+            viewPrompt = threeViewPromptPair.zh; // 使用中文版本生成
           }
 
-          if (viewImages.length > 0) {
-            hasText = await detectTextInImage(viewImages[0]);
-            if (hasText) {
-              console.log(`Text detected in generated 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+          // 存储提示词到state
+          const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
+          if (currentState) {
+            (currentState as any).threeViewPromptZh = threeViewPromptPair.zh;
+            (currentState as any).threeViewPromptEn = threeViewPromptPair.en;
+          }
+
+          const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
+
+          // 使用九宫格表情作为参考图片
+          const inputImages = state.expressionSheet ? [state.expressionSheet] : [];
+
+          let viewImages: string[] = [];
+          let hasText = true;
+          let attempt = 0;
+          const MAX_ATTEMPTS = 3;
+
+          console.log('[CharacterAction] Starting 3-view generation, attempts:', MAX_ATTEMPTS);
+
+          while (hasText && attempt < MAX_ATTEMPTS) {
+            if (attempt > 0) {
+              const retryPrompt = viewPrompt + " NO TEXT. NO LABELS. CLEAR BACKGROUND.";
+              viewImages = await generateImageWithFallback(
+                retryPrompt,
+                getUserDefaultModel('image'),
+                inputImages,
+                { aspectRatio: '16:9', resolution: '1K', count: 1 },
+                { nodeId, nodeType: node.type }
+              );
+            } else {
+              viewImages = await generateImageWithFallback(
+                viewPrompt,
+                getUserDefaultModel('image'),
+                inputImages,
+                { aspectRatio: '16:9', resolution: '1K', count: 1 },
+                { nodeId, nodeType: node.type }
+              );
             }
+
+            if (viewImages.length > 0) {
+              hasText = await detectTextInImage(viewImages[0]);
+              if (hasText) {
+                console.log(`Text detected in generated 3-view (Attempt ${attempt + 1}/${MAX_ATTEMPTS}). Retrying...`);
+              }
+            }
+            attempt++;
           }
-          attempt++;
-        }
 
-        if (!viewImages || viewImages.length === 0) {
-          throw new Error('三视图生成失败：API未返回图片数据');
-        }
+          if (!viewImages || viewImages.length === 0) {
+            throw new Error('三视图生成失败：API未返回图片数据');
+          }
 
-        return viewImages[0];
-      }
-    );
+          return viewImages[0];
+        }
+      ),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('三视图生成超时，请检查网络连接或API配置'));
+        }, timeoutMs);
+      })
+    ]).finally(() => {
+      clearTimeout(timeoutId);
+    }) as string;
 
     console.log('[CharacterAction] Three-view sheet generated successfully:', charName);
     // 添加成功反馈

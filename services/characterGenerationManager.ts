@@ -61,6 +61,7 @@ export interface CharacterGenerationState {
 
   // UI状态
   isSaved: boolean;
+  isGeneratingThreeView: boolean;
 
   // 创建时间（用于调试）
   createdAt: number;
@@ -144,6 +145,7 @@ class CharacterGenerationManager {
       expressionStatus: 'PENDING',
       threeViewStatus: 'PENDING',
       isSaved: false,
+      isGeneratingThreeView: false,
       createdAt: now,
       updatedAt: now
     };
@@ -352,18 +354,21 @@ class CharacterGenerationManager {
         if (status === 'GENERATING') {
           this.updateCharacterState(nodeId, characterName, {
             threeViewStatus: 'GENERATING',
+            isGeneratingThreeView: true,
             currentThreeViewTaskId: taskId
           });
         } else if (status === 'SUCCESS') {
           this.updateCharacterState(nodeId, characterName, {
             threeViewStatus: 'SUCCESS',
             threeViewSheet: result,
+            isGeneratingThreeView: false,
             currentThreeViewTaskId: undefined
           });
         } else if (status === 'FAILED') {
           this.updateCharacterState(nodeId, characterName, {
             threeViewStatus: 'FAILED',
             threeViewError: error?.message,
+            isGeneratingThreeView: false,
             currentThreeViewTaskId: undefined
           });
         }
