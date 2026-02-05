@@ -574,6 +574,144 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
 
           {/* Right: Prompt Editor & Model Configuration */}
           <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Model Configuration */}
+            <div className="flex-none mb-3 p-3 bg-black/20 border border-white/10 rounded-xl">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">模型配置</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRefreshConfig();
+                  }}
+                  disabled={isRefreshingConfig}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                    isRefreshingConfig
+                      ? 'bg-white/5 text-slate-500 cursor-not-allowed'
+                      : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30'
+                  }`}
+                  title="刷新模型配置"
+                >
+                  <RefreshCw size={10} className={isRefreshingConfig ? 'animate-spin' : ''} />
+                  <span>{isRefreshingConfig ? '刷新中...' : '刷新'}</span>
+                </button>
+              </div>
+
+              {/* Platform Selection */}
+              <div className="flex flex-col gap-2 mb-3">
+                <span className="text-[9px] text-slate-500 font-bold">平台 (Platform)</span>
+                <div className="flex gap-2">
+                  {platforms.map((platform) => (
+                    <button
+                      key={platform.code}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdate(node.id, {
+                          selectedPlatform: platform.code,
+                          selectedModel: platform.models[0],
+                          subModel: null
+                        });
+                      }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-bold transition-all ${
+                        selectedPlatform === platform.code
+                          ? 'bg-purple-500/20 border border-purple-500/50 text-purple-300'
+                          : 'bg-black/40 border border-white/10 text-slate-400 hover:bg-white/5'
+                      }`}
+                    >
+                      {platform.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Model Selection */}
+              <div className="flex flex-col gap-2 mb-3">
+                <span className="text-[9px] text-slate-500 font-bold">模型 (Model)</span>
+                <div className="grid grid-cols-4 gap-1">
+                  {platforms[0].models.map((model) => {
+                    const modelName = modelNames[model] || model;
+                    const isSelected = selectedModel === model;
+                    return (
+                      <button
+                        key={model}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdate(node.id, {
+                            selectedModel: model,
+                            subModel: null
+                          });
+                        }}
+                        className={`px-2 py-1.5 rounded-lg text-[9px] font-bold transition-all truncate ${
+                          isSelected
+                            ? 'bg-purple-500/20 border border-purple-500/50 text-purple-300'
+                            : 'bg-black/40 border border-white/10 text-slate-400 hover:bg-white/5'
+                        }`}
+                        title={modelName}
+                      >
+                        {modelName}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SubModel Selection */}
+              <div className="flex flex-col gap-2 mb-3">
+                <span className="text-[9px] text-slate-500 font-bold">子模型 (SubModel)</span>
+                <div className="relative">
+                  <select
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onUpdate(node.id, { subModel: e.target.value });
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    value={selectedSubModel}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[10px] text-white outline-none focus:border-purple-500/50 cursor-pointer appearance-none"
+                  >
+                    {subModels.map((subModel) => (
+                      <option key={subModel} value={subModel}>
+                        {subModelDisplayNames[subModel] || subModel}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Video Config */}
+              <div className="flex gap-3">
+                <div className="flex-1 flex flex-col gap-1">
+                  <span className="text-[9px] text-slate-500 font-bold">比例 (Ratio)</span>
+                  <select
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onUpdate(node.id, { modelConfig: { ...modelConfig, aspect_ratio: e.target.value } });
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    value={modelConfig.aspect_ratio}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-purple-500/50 cursor-pointer appearance-none"
+                  >
+                    <option value="16:9">16:9 横屏</option>
+                    <option value="9:16">9:16 竖屏</option>
+                  </select>
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  <span className="text-[9px] text-slate-500 font-bold">时长 (Duration)</span>
+                  <select
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onUpdate(node.id, { modelConfig: { ...modelConfig, duration: e.target.value } });
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    value={modelConfig.duration}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none focus:border-purple-500/50 cursor-pointer appearance-none"
+                  >
+                    <option value="5">5 秒</option>
+                    <option value="10">10 秒</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             {/* Prompt Editor */}
             <div className="flex-1 flex flex-col gap-2 overflow-hidden">
               <div className="flex items-center justify-between">
