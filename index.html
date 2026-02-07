@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
@@ -8,7 +7,7 @@
     <meta name="copyright" content="Copyright (c) 2025 光波. All rights reserved." />
     <meta name="description" content="AIYOU - AI驱动的一站式漫剧创作平台，开发者：光波" />
     <title>AIYOU - AI驱动的一站式漫剧创作平台 | 光波开发</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/index.css">
     <style>
       :root {
         --glass-border: rgba(255, 255, 255, 0.12);
@@ -18,10 +17,8 @@
       }
 
       body {
-        /* Lovart Style: Deepest Black */
-        background-color: #020202; 
-        /* Very subtle ambient light */
-        background-image: 
+        background-color: #020202;
+        background-image:
           radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.03), transparent 40%),
           radial-gradient(circle at 50% 100%, rgba(34, 211, 238, 0.02), transparent 40%);
         color: #f5f5f7;
@@ -31,14 +28,12 @@
         -moz-osx-font-smoothing: grayscale;
         user-select: none;
       }
-      
-      /* Hide native scrollbars */
+
       ::-webkit-scrollbar {
         width: 0px;
         background: transparent;
       }
 
-      /* Custom Scrollbar */
       .custom-scrollbar::-webkit-scrollbar {
         width: 4px;
         height: 4px;
@@ -54,7 +49,6 @@
         background-color: rgba(255, 255, 255, 0.3);
       }
 
-      /* Noise Overlay */
       .noise-bg {
         position: absolute;
         inset: 0;
@@ -63,14 +57,12 @@
         mix-blend-mode: overlay;
         z-index: 0;
       }
-      
-      /* Typography enhancements */
+
       .font-display {
         font-family: "SF Pro Display", "Inter", sans-serif;
         letter-spacing: -0.02em;
       }
 
-      /* Border glow animation for generating status */
       @keyframes border-glow {
         0%, 100% {
           box-shadow: 0 0 10px rgba(59, 130, 246, 0.3),
@@ -89,22 +81,9 @@
         animation: border-glow 2s ease-in-out infinite;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.555.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.30.0",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.0/client",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.0/",
-    "react/": "https://esm.sh/react@^19.2.0/",
-    "react": "https://esm.sh/react@^19.2.0"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
+  </head>
   <body>
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+    <script type="module" src="/index.tsx"></script>
+  </body>
 </html>

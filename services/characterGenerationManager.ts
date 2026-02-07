@@ -155,9 +155,9 @@ class CharacterGenerationManager {
   }
 
   /**
-   * 更新角色状态（内部方法，保证不可变性）
+   * 更新角色状态（保证不可变性）
    */
-  private updateCharacterState(
+  updateCharacterState(
     nodeId: string,
     characterName: string,
     updates: Partial<CharacterGenerationState>
@@ -545,36 +545,29 @@ class CharacterGenerationManager {
 
     console.log('[CharacterGenerationManager] restoreCharacter:', { nodeId, characterName, characterId, hasProfile: !!data.profile, hasExpression: !!data.expressionSheet, hasThreeView: !!data.threeViewSheet });
 
-    // 直接更新内部状态
+    // 通过 updateCharacterState 进行不可变更新
+    const updates: Partial<CharacterGenerationState> = {};
+
     if (data.profile) {
-      state.profile = data.profile;
-      state.profileStatus = 'SUCCESS';
+      updates.profile = data.profile;
+      updates.profileStatus = 'SUCCESS';
     }
-
     if (data.expressionSheet) {
-      state.expressionSheet = data.expressionSheet;
-      state.expressionStatus = 'SUCCESS';
+      updates.expressionSheet = data.expressionSheet;
+      updates.expressionStatus = 'SUCCESS';
     }
-
     if (data.threeViewSheet) {
-      state.threeViewSheet = data.threeViewSheet;
-      state.threeViewStatus = 'SUCCESS';
+      updates.threeViewSheet = data.threeViewSheet;
+      updates.threeViewStatus = 'SUCCESS';
     }
+    if (data.expressionPromptZh) updates.expressionPromptZh = data.expressionPromptZh;
+    if (data.expressionPromptEn) updates.expressionPromptEn = data.expressionPromptEn;
+    if (data.threeViewPromptZh) updates.threeViewPromptZh = data.threeViewPromptZh;
+    if (data.threeViewPromptEn) updates.threeViewPromptEn = data.threeViewPromptEn;
 
-    if (data.expressionPromptZh) {
-      state.expressionPromptZh = data.expressionPromptZh;
+    if (Object.keys(updates).length > 0) {
+      this.updateCharacterState(nodeId, characterName, updates);
     }
-    if (data.expressionPromptEn) {
-      state.expressionPromptEn = data.expressionPromptEn;
-    }
-    if (data.threeViewPromptZh) {
-      state.threeViewPromptZh = data.threeViewPromptZh;
-    }
-    if (data.threeViewPromptEn) {
-      state.threeViewPromptEn = data.threeViewPromptEn;
-    }
-
-    state.updatedAt = Date.now();
   }
 
   /**
@@ -628,50 +621,49 @@ class CharacterGenerationManager {
   private stateToProfile(state: CharacterGenerationState): CharacterProfile {
     const status = this.getOverallStatus(state);
 
-    return {
+    // 构建结果对象，只包含有值的字段，避免 undefined 覆盖 existing 数据
+    const result: any = {
       id: `${state.nodeId}-${state.characterName}`,
       name: state.characterName,
-      alias: state.profile?.alias,
-      basicStats: state.profile?.basicStats,
-      profession: state.profile?.profession,
-      background: state.profile?.background,
-      personality: state.profile?.personality,
-      motivation: state.profile?.motivation,
-      values: state.profile?.values,
-      weakness: state.profile?.weakness,
-      relationships: state.profile?.relationships,
-      habits: state.profile?.habits,
-      appearance: state.profile?.appearance,
-
-      // 生成结果
-      expressionSheet: state.expressionSheet,
-      threeViewSheet: state.threeViewSheet,
-
-      // 存储的提示词
-      expressionPromptZh: state.expressionPromptZh,
-      expressionPromptEn: state.expressionPromptEn,
-      threeViewPromptZh: state.threeViewPromptZh,
-      threeViewPromptEn: state.threeViewPromptEn,
-
-      // 状态
       status: status,
       error: this.getOverallError(state),
-
-      // UI状态
       isSaved: state.isSaved,
-
-      // 生成中的状态
       profileStatus: state.profileStatus,
       expressionStatus: state.expressionStatus,
       threeViewStatus: state.threeViewStatus,
       isGeneratingExpression: state.expressionStatus === 'GENERATING',
       isGeneratingThreeView: state.threeViewStatus === 'GENERATING',
-      expressionError: state.expressionError,
-      threeViewError: state.threeViewError,
+    };
 
-      // 原始数据
-      rawProfileData: state.profile
-    } as CharacterProfile;
+    // profile 字段：只添加有值的
+    if (state.profile) {
+      const profileFields = [
+        'alias', 'basicStats', 'profession', 'background', 'personality',
+        'motivation', 'values', 'weakness', 'relationships', 'habits', 'appearance'
+      ] as const;
+      for (const field of profileFields) {
+        if (state.profile[field] !== undefined && state.profile[field] !== null) {
+          result[field] = state.profile[field];
+        }
+      }
+      result.rawProfileData = state.profile;
+    }
+
+    // 生成结果：只添加有值的
+    if (state.expressionSheet) result.expressionSheet = state.expressionSheet;
+    if (state.threeViewSheet) result.threeViewSheet = state.threeViewSheet;
+
+    // 提示词：只添加有值的
+    if (state.expressionPromptZh) result.expressionPromptZh = state.expressionPromptZh;
+    if (state.expressionPromptEn) result.expressionPromptEn = state.expressionPromptEn;
+    if (state.threeViewPromptZh) result.threeViewPromptZh = state.threeViewPromptZh;
+    if (state.threeViewPromptEn) result.threeViewPromptEn = state.threeViewPromptEn;
+
+    // 错误信息：只添加有值的
+    if (state.expressionError) result.expressionError = state.expressionError;
+    if (state.threeViewError) result.threeViewError = state.threeViewError;
+
+    return result as CharacterProfile;
   }
 
   /**

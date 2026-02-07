@@ -20,7 +20,14 @@ const PORT = process.env.PORT || 3001;
 
 // 中间件
 app.use(cors({
-  origin: ['http://localhost:4000', 'http://127.0.0.1:4000'],
+  origin: function(origin, callback) {
+    // 允许同源请求（无 origin）和 localhost 的任意端口
+    if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // 开发阶段允许所有来源
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -2543,12 +2550,29 @@ app.use((req, res) => {
 /**
  * 启动服务器
  */
+
+// 托管前端静态文件（生产构建产物）
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  // SPA fallback: 所有非 API 路由返回 index.html
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/admin')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 app.listen(PORT, () => {
   console.log('🚀 AIYOU Backend Server started');
   console.log(`📍 HTTP: http://localhost:${PORT}`);
   console.log(`🔧 Health: http://localhost:${PORT}/api/health`);
   console.log(`📤 Upload: http://localhost:${PORT}/api/upload-oss`);
   console.log(`🎛️  Admin: http://localhost:${PORT}/admin`);
+  if (fs.existsSync(distPath)) {
+    console.log(`🌐 Frontend: http://localhost:${PORT}`);
+  }
   console.log('');
   console.log('⚙️  OSS Configuration:');
   console.log(`   Bucket: ${ossConfig.bucket}`);

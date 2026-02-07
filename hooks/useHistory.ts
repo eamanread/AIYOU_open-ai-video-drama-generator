@@ -25,9 +25,9 @@ export function useHistory(maxHistorySize = 50) {
     groups: Group[]
   ) => {
     const newState: HistoryState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      connections: JSON.parse(JSON.stringify(connections)),
-      groups: JSON.parse(JSON.stringify(groups))
+      nodes: structuredClone(nodes),
+      connections: structuredClone(connections),
+      groups: structuredClone(groups)
     };
 
     setHistory(prev => {

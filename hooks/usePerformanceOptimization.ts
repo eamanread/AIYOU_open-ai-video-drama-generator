@@ -53,54 +53,75 @@ export function useDebounce<T extends (...args: any[]) => any>(
  * 避免传递整个nodes数组导致不必要的重渲染
  */
 export function createNodeQuery(nodesRef: React.MutableRefObject<AppNode[]>) {
+  let cachedMap: Map<string, AppNode> | null = null;
+  let cachedNodesRef: AppNode[] | null = null;
+
+  const getMap = (): Map<string, AppNode> => {
+    // Rebuild map only when the underlying array reference changes
+    if (cachedMap === null || cachedNodesRef !== nodesRef.current) {
+      cachedMap = new Map<string, AppNode>();
+      for (const node of nodesRef.current) {
+        cachedMap.set(node.id, node);
+      }
+      cachedNodesRef = nodesRef.current;
+    }
+    return cachedMap;
+  };
+
+  /**
+   * 根据ID获取节点 - O(1) via Map
+   */
+  const getNode = (id: string): AppNode | undefined => {
+    return getMap().get(id);
+  };
+
+  /**
+   * 获取指定类型的所有节点
+   */
+  const getNodesByType = (nodeType: string): AppNode[] => {
+    return nodesRef.current.filter(n => n.type === nodeType);
+  };
+
+  /**
+   * 获取指定类型的上游节点 - O(k) where k = number of inputs
+   */
+  const getUpstreamNodes = (nodeId: string, nodeType: string): AppNode[] => {
+    const node = getMap().get(nodeId);
+    if (!node || !node.inputs) return [];
+    return node.inputs
+      .map(id => getMap().get(id))
+      .filter((n): n is AppNode => n !== undefined && n.type === nodeType);
+  };
+
+  /**
+   * 获取第一个指定类型的上游节点
+   */
+  const getFirstUpstreamNode = (nodeId: string, nodeType: string): AppNode | undefined => {
+    return getUpstreamNodes(nodeId, nodeType)[0];
+  };
+
+  /**
+   * 检查是否存在指定类型的上游节点
+   */
+  const hasUpstreamNode = (nodeId: string, nodeType: string): boolean => {
+    return getUpstreamNodes(nodeId, nodeType).length > 0;
+  };
+
+  /**
+   * 根据ID批量获取节点 - O(k) via Map
+   */
+  const getNodesByIds = (ids: string[]): AppNode[] => {
+    const map = getMap();
+    return ids.map(id => map.get(id)).filter((n): n is AppNode => n !== undefined);
+  };
+
   return {
-    /**
-     * 根据ID获取节点
-     */
-    getNode: (id: string): AppNode | undefined => {
-      return nodesRef.current.find(n => n.id === id);
-    },
-
-    /**
-     * 获取指定类型的所有节点
-     */
-    getNodesByType: (nodeType: string): AppNode[] => {
-      return nodesRef.current.filter(n => n.type === nodeType);
-    },
-
-    /**
-     * 获取指定类型的上游节点
-     */
-    getUpstreamNodes: (nodeId: string, nodeType: string): AppNode[] => {
-      const node = nodesRef.current.find(n => n.id === nodeId);
-      if (!node || !node.inputs) return [];
-
-      return nodesRef.current.filter(n =>
-        node.inputs.includes(n.id) && n.type === nodeType
-      );
-    },
-
-    /**
-     * 获取第一个指定类型的上游节点
-     */
-    getFirstUpstreamNode: (nodeId: string, nodeType: string): AppNode | undefined => {
-      const nodes = createNodeQuery(nodesRef).getUpstreamNodes(nodeId, nodeType);
-      return nodes[0];
-    },
-
-    /**
-     * 检查是否存在指定类型的上游节点
-     */
-    hasUpstreamNode: (nodeId: string, nodeType: string): boolean => {
-      return createNodeQuery(nodesRef).getUpstreamNodes(nodeId, nodeType).length > 0;
-    },
-
-    /**
-     * 根据ID批量获取节点
-     */
-    getNodesByIds: (ids: string[]): AppNode[] => {
-      return ids.map(id => nodesRef.current.find(n => n.id === id)).filter(Boolean) as AppNode[];
-    },
+    getNode,
+    getNodesByType,
+    getUpstreamNodes,
+    getFirstUpstreamNode,
+    hasUpstreamNode,
+    getNodesByIds,
   };
 }
 

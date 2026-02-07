@@ -62,12 +62,8 @@ export async function handleCharacterAction(
       break;
   }
 
-  console.log('[CharacterAction] handleCharacterAction END, calling updateNodeUI');
-
-  // 更新UI
-  updateNodeUI(nodeId, onNodeUpdate, allNodes);
-
   console.log('[CharacterAction] handleCharacterAction COMPLETE');
+  // 注意：不再在此处调用 updateNodeUI，各 handler 内部已负责更新
 }
 
 /**
@@ -159,6 +155,21 @@ async function handleRetry(
   onNodeUpdate: (nodeId: string, updates: any) => void
 ) {
   console.log('[CharacterAction] handleRetry (regenerate profile):', { nodeId, charName });
+
+  // 立即更新 UI 为生成中状态
+  const existingChars = node.data.generatedCharacters || [];
+  const charExists = existingChars.some(c => c.name === charName);
+  if (charExists) {
+    onNodeUpdate(nodeId, {
+      generatedCharacters: existingChars.map(c =>
+        c.name === charName ? { ...c, status: 'GENERATING' } : c
+      )
+    });
+  } else {
+    onNodeUpdate(nodeId, {
+      generatedCharacters: [...existingChars, { id: '', name: charName, status: 'GENERATING' } as any]
+    });
+  }
 
   // 获取角色配置
   const config = node.data.characterConfigs?.[charName] || { method: 'AI_AUTO' };
@@ -266,8 +277,8 @@ async function handleGenerateExpression(
           profile: existingCharacter,
           profileStatus: 'SUCCESS'
         });
-        state.profile = existingCharacter;
-        state.profileStatus = 'SUCCESS';
+        // 重新获取更新后的 state，避免直接 mutation
+        state = characterGenerationManager.getCharacterState(nodeId, charName)!;
       }
     } else {
       console.log('[CharacterAction] Character not found in node.data, initializing empty state:', charName);
@@ -319,12 +330,11 @@ async function handleGenerateExpression(
             expressionPromptPair = promptManager.buildExpressionPrompt(stylePrompt, state.profile, undefined, styleType);
           }
 
-          // 存储提示词到state（通过直接更新内部状态）
-          const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
-          if (currentState) {
-            (currentState as any).expressionPromptZh = expressionPromptPair.zh;
-            (currentState as any).expressionPromptEn = expressionPromptPair.en;
-          }
+          // 存储提示词到state（通过 updateCharacterState 避免直接 mutation）
+          characterGenerationManager.updateCharacterState(nodeId, charName, {
+            expressionPromptZh: expressionPromptPair.zh,
+            expressionPromptEn: expressionPromptPair.en
+          } as any);
 
           const userPriority = getUserPriority('image');
           const initialModel = userPriority[0] || 'gemini-3-pro-image-preview';
@@ -457,14 +467,16 @@ async function handleGenerateThreeView(
           profile: existingCharacter,
           profileStatus: 'SUCCESS'
         });
-        state.profile = existingCharacter;
-        state.profileStatus = 'SUCCESS';
       }
       // 同时恢复expressionSheet（如果有）
       if (existingCharacter.expressionSheet) {
-        state.expressionSheet = existingCharacter.expressionSheet;
-        state.expressionStatus = 'SUCCESS';
+        characterGenerationManager.updateCharacterState(nodeId, charName, {
+          expressionSheet: existingCharacter.expressionSheet,
+          expressionStatus: 'SUCCESS'
+        } as any);
       }
+      // 重新获取更新后的 state，避免直接 mutation
+      state = characterGenerationManager.getCharacterState(nodeId, charName)!;
     } else {
       console.log('[CharacterAction] Character not found in node.data, initializing empty state:', charName);
       state = characterGenerationManager.initializeCharacter(nodeId, charName);
@@ -536,12 +548,11 @@ async function handleGenerateThreeView(
             viewPrompt = threeViewPromptPair.zh; // 使用中文版本生成
           }
 
-          // 存储提示词到state
-          const currentState = characterGenerationManager.getCharacterState(nodeId, charName);
-          if (currentState) {
-            (currentState as any).threeViewPromptZh = threeViewPromptPair.zh;
-            (currentState as any).threeViewPromptEn = threeViewPromptPair.en;
-          }
+          // 存储提示词到state（通过 updateCharacterState 避免直接 mutation）
+          characterGenerationManager.updateCharacterState(nodeId, charName, {
+            threeViewPromptZh: threeViewPromptPair.zh,
+            threeViewPromptEn: threeViewPromptPair.en
+          } as any);
 
           const negativePrompt = "nsfw, text, watermark, label, signature, bad anatomy, deformed, low quality, writing, letters, logo, interface, ui, username, website, chinese characters, info box, stats, descriptions, annotations";
 
@@ -657,13 +668,14 @@ async function handleGenerateSingle(
 /**
  * 更新节点UI
  * 关键：合并管理器和node.data的数据，避免角色丢失
+ * 策略：以 existing（node.data）为基础，只用 manager 中有值的字段覆盖
  */
 function updateNodeUI(
   nodeId: string,
   onNodeUpdate: (nodeId: string, updates: any) => void,
-  allNodes: AppNode[]  // 添加allNodes参数，用于获取node.data中的现有角色
+  allNodes: AppNode[]
 ) {
-  // 从管理器获取已生成的角色（最新状态）
+  // 从管理器获取已生成的角色（最新状态，stateToProfile 已过滤 undefined）
   const managerCharacters = characterGenerationManager.getCharactersForNode(nodeId);
 
   // 从node.data获取现有的角色（可能包含管理器没有的）
@@ -674,18 +686,6 @@ function updateNodeUI(
     nodeId,
     managerCount: managerCharacters.length,
     existingCount: existingCharacters.length,
-    managerCharacters: managerCharacters.map(c => ({
-      name: c.name,
-      status: c.status,
-      hasThreeViewSheet: !!c.threeViewSheet,
-      isGeneratingThreeView: c.isGeneratingThreeView
-    })),
-    existingCharacters: existingCharacters.map(c => ({
-      name: c.name,
-      status: c.status,
-      hasThreeViewSheet: !!c.threeViewSheet,
-      isGeneratingThreeView: c.isGeneratingThreeView
-    }))
   });
 
   // 合并两个数据源
@@ -696,50 +696,24 @@ function updateNodeUI(
     mergedMap.set(c.name, { ...c });
   });
 
-  // 2. 管理器的数据合并（不是覆盖，而是深度合并）
+  // 2. 管理器的数据合并：以 existing 为基础，manager 中有值的字段覆盖
   managerCharacters.forEach(c => {
     const existing = mergedMap.get(c.name);
     if (existing) {
-      // 深度合并：优先保留existing中有值的字段，manager中的字段更新有值的
-      const merged: any = { ...existing }; // 从existing开始（包含所有历史字段）
+      // 从 existing 开始（包含所有历史字段）
+      const merged: any = { ...existing };
 
-      // 遍历manager中的所有字段，只更新非undefined的值
+      // 遍历 manager 中的所有字段，只更新有值的（stateToProfile 已过滤 undefined）
       Object.keys(c).forEach(key => {
         if (c[key] !== undefined && c[key] !== null) {
           merged[key] = c[key];
         }
       });
 
-      // 关键修复：确保threeViewSheet被正确合并
-      if (c.threeViewSheet && c.threeViewSheet !== existing.threeViewSheet) {
-        merged.threeViewSheet = c.threeViewSheet;
-        console.log('[updateNodeUI] Updated threeViewSheet for', c.name, ':', c.threeViewSheet?.substring(0, 50));
-      }
-
-      // 关键修复：确保expressionSheet被正确合并
-      if (c.expressionSheet && c.expressionSheet !== existing.expressionSheet) {
-        merged.expressionSheet = c.expressionSheet;
-        console.log('[updateNodeUI] Updated expressionSheet for', c.name, ':', c.expressionSheet?.substring(0, 50));
-      }
-
-      // 特别处理：确保某些关键字段优先使用existing的值（如果manager中是undefined）
-      const priorityFields = [
-        'basicStats', 'profession', 'personality', 'appearance',
-        'background', 'motivation', 'values', 'weakness',
-        'relationships', 'habits', 'interests', 'rawProfileData',
-        'expressionPromptZh', 'expressionPromptEn', 'threeViewPromptZh', 'threeViewPromptEn'
-      ];
-
-      priorityFields.forEach(field => {
-        if (existing[field] && !merged[field]) {
-          merged[field] = existing[field];
-        }
-      });
-
       mergedMap.set(c.name, merged);
     } else {
-      // manager中有新角色（理论上不应该发生）
-      mergedMap.set(c.name, c);
+      // manager 中有新角色
+      mergedMap.set(c.name, { ...c });
     }
   });
 
@@ -752,9 +726,9 @@ function updateNodeUI(
     characters: mergedCharacters.map(c => ({
       name: c.name,
       status: c.status,
-      hasThreeViewSheet: !!c.threeViewSheet,
-      isGeneratingThreeView: c.isGeneratingThreeView,
-      threeViewStatus: c.threeViewStatus
+      hasBasicStats: !!c.basicStats,
+      hasExpression: !!c.expressionSheet,
+      hasThreeView: !!c.threeViewSheet,
     }))
   });
 

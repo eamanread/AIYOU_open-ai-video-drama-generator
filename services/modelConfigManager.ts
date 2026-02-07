@@ -264,7 +264,7 @@ class ModelConfigManager {
     }
 
     // 使用默认配置
-    this.config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    this.config = structuredClone(DEFAULT_CONFIG);
     this.save();
     return this.config;
   }
@@ -286,7 +286,7 @@ class ModelConfigManager {
    * 重置为默认配置
    */
   reset(): void {
-    this.config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    this.config = structuredClone(DEFAULT_CONFIG);
     this.save();
   }
 

@@ -47,9 +47,10 @@ export const ConnectionLayer: React.FC<ConnectionLayerProps> = ({
    * 渲染已建立的连接线
    */
   const renderConnections = useMemo(() => {
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
     return connections.map((conn, idx) => {
-      const fromNode = nodes.find(n => n.id === conn.from);
-      const toNode = nodes.find(n => n.id === conn.to);
+      const fromNode = nodeById.get(conn.from);
+      const toNode = nodeById.get(conn.to);
 
       if (!fromNode || !toNode) return null;
 
@@ -117,8 +118,9 @@ export const ConnectionLayer: React.FC<ConnectionLayerProps> = ({
       startX = (connectionStart.x - pan.x) / scale;
       startY = (connectionStart.y - pan.y) / scale;
     } else {
-      // 普通节点的连接
-      const startNode = nodes.find(n => n.id === connectionStart.id);
+      // 普通节点的连接 - O(1) Map lookup
+      const nodeById = new Map(nodes.map(n => [n.id, n]));
+      const startNode = nodeById.get(connectionStart.id);
       if (!startNode) return null;
 
       const startHeight = getNodeHeight(startNode);

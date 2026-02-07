@@ -10,7 +10,7 @@ import { RefreshCw, Play, Image as ImageIcon, Video as VideoIcon, Type, AlertCir
 import { VideoModeSelector, SceneDirectorOverlay } from './VideoNodeModules';
 import { PromptEditor } from './PromptEditor';
 import { StoryboardVideoNode, StoryboardVideoChildNode } from './StoryboardVideoNode';
-import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
+import React, { memo, useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS, AUDIO_MODELS } from '../services/modelConfig';
 import { promptManager } from '../services/promptManager';
 import { getNodeNameCN } from '../utils/nodeHelpers';
@@ -61,10 +61,19 @@ const IMAGE_COUNTS = [1, 2, 3, 4];
 const VIDEO_COUNTS = [1, 2, 3, 4];
 const GLASS_PANEL = "bg-[#2c2c2e]/95 backdrop-blur-2xl border border-white/10 shadow-2xl";
 const DEFAULT_NODE_WIDTH = 420;
-const DEFAULT_FIXED_HEIGHT = 360; 
+const DEFAULT_FIXED_HEIGHT = 360;
 const AUDIO_NODE_HEIGHT = 200;
 const STORYBOARD_NODE_HEIGHT = 500;
 const CHARACTER_NODE_HEIGHT = 600;
+
+// 性能优化：提取静态样式常量，避免每次渲染时重新创建对象
+const STYLE_BLUR_ON = { filter: 'blur(10px)' } as const;
+const STYLE_BLUR_OFF = { filter: 'none' } as const;
+const STYLE_MAX_HEIGHT_180 = { maxHeight: '180px' } as const;
+const STYLE_MAX_HEIGHT_200 = { maxHeight: '200px' } as const;
+const STYLE_MIN_HEIGHT_80 = { minHeight: '80px' } as const;
+const STYLE_HEIGHT_60 = { height: '60px' } as const;
+const STYLE_HEIGHT_80 = { height: '80px' } as const;
 
 const SHORT_DRAMA_GENRES = [
     '霸总 (CEO)', '古装 (Historical)', '悬疑 (Suspense)', '甜宠 (Romance)', 
@@ -212,8 +221,44 @@ const safePause = (e: React.SyntheticEvent<HTMLVideoElement> | HTMLVideoElement)
     }
 };
 
-const arePropsEqual = (prev: NodeProps, next: NodeProps) => {
-    // 首先检查交互状态变化（这些状态变化时必须重新渲染）
+// 性能优化：将关键数据字段列表提升为模块级常量，避免每次比较时重新创建数组
+const CRITICAL_DATA_KEYS: readonly string[] = [
+    'prompt', 'model', 'aspectRatio', 'resolution', 'count',
+    'image', 'videoUri', 'croppedFrame', 'analysis',
+    'scriptOutline', 'scriptGenre', 'scriptSetting', 'scriptVisualStyle',
+    'scriptEpisodes', 'scriptDuration',
+    'generatedEpisodes',
+    'episodeSplitCount', 'episodeModificationSuggestion', 'selectedChapter',
+    'storyboardCount', 'storyboardDuration', 'storyboardStyle', 'storyboardGridType', 'storyboardShots',
+    'storyboardGridImage', 'storyboardGridImages', 'storyboardPanelOrientation',
+    'extractedCharacterNames', 'characterConfigs', 'generatedCharacters',
+    'stylePrompt', 'negativePrompt', 'visualStyle',
+    'error', 'progress', 'duration', 'quality', 'isCompliant',
+    'isExpanded', 'videoMode', 'shotType', 'cameraAngle', 'cameraMovement',
+    'selectedFields', 'dramaName', 'taskGroups',
+    'modelConfig',
+    'selectedPlatform', 'selectedModel', 'subModel',
+    'availableShots', 'selectedShotIds', 'generatedPrompt', 'fusedImage',
+    'isLoading', 'isLoadingFusion', 'promptModified', 'status',
+    'audioUri', 'images', 'videoUris', 'isCached', 'cacheLocation',
+    'episodeStoryboard', 'generationMode',
+    'dramaIntroduction', 'worldview',
+] as const;
+
+const arePropsEqual = (prev: NodeProps, next: NodeProps): boolean => {
+    // 快速路径：如果node引用完全相同，只需检查少量标量props
+    if (prev.node === next.node &&
+        prev.isSelected === next.isSelected &&
+        prev.isConnecting === next.isConnecting &&
+        prev.isDragging === next.isDragging &&
+        prev.isResizing === next.isResizing &&
+        prev.isGroupDragging === next.isGroupDragging &&
+        prev.inputAssets === next.inputAssets &&
+        prev.characterLibrary === next.characterLibrary) {
+        return true;
+    }
+
+    // 检查交互状态变化（这些状态变化时必须重新渲染）
     if (prev.isDragging !== next.isDragging ||
         prev.isResizing !== next.isResizing ||
         prev.isSelected !== next.isSelected ||
@@ -222,7 +267,6 @@ const arePropsEqual = (prev: NodeProps, next: NodeProps) => {
         return false;
     }
 
-    // 深度比较node对象的关键属性（而不是引用比较）
     const prevNode = prev.node;
     const nextNode = next.node;
 
@@ -233,37 +277,17 @@ const arePropsEqual = (prev: NodeProps, next: NodeProps) => {
         prevNode.y !== nextNode.y ||
         prevNode.width !== nextNode.width ||
         prevNode.height !== nextNode.height ||
-        prevNode.status !== nextNode.status) {
+        prevNode.status !== nextNode.status ||
+        prevNode.title !== nextNode.title) {
         return false;
     }
 
-    // 检查node.data的关键属性
+    // 检查node.data的关键属性（使用模块级常量避免每次创建数组）
     const prevData = prevNode.data;
     const nextData = nextNode.data;
 
-    // 检查关键的data字段（这些字段变化时需要重新渲染）
-    const criticalDataKeys = [
-        'prompt', 'model', 'aspectRatio', 'resolution', 'count',
-        'image', 'videoUri', 'croppedFrame', 'analysis',
-        'scriptOutline', 'scriptGenre', 'scriptSetting', 'scriptVisualStyle',
-        'scriptEpisodes', 'scriptDuration', // 剧本大纲滑块字段
-        'generatedEpisodes',
-        'episodeSplitCount', 'episodeModificationSuggestion', 'selectedChapter', // 剧本分集字段
-        'storyboardCount', 'storyboardDuration', 'storyboardStyle', 'storyboardGridType', 'storyboardShots', // 分镜图字段
-        'storyboardGridImage', 'storyboardGridImages', 'storyboardPanelOrientation', // 分镜图面板方向
-        'extractedCharacterNames', 'characterConfigs', 'generatedCharacters',
-        'stylePrompt', 'negativePrompt', 'visualStyle', // 风格预设字段
-        'error', 'progress', 'duration', 'quality', 'isCompliant',
-        'isExpanded', 'videoMode', 'shotType', 'cameraAngle', 'cameraMovement',
-        'selectedFields', 'dramaName', 'taskGroups',
-        'modelConfig', // 视频生成配置（尺寸、时长、清晰度）
-        'selectedPlatform', 'selectedModel', 'subModel', // 分镜视频生成节点模型选择
-        'availableShots', 'selectedShotIds', 'generatedPrompt', 'fusedImage', // 分镜视频生成节点数据
-        'isLoading', 'isLoadingFusion', 'promptModified', 'status' // 状态字段
-    ];
-
-    for (const key of criticalDataKeys) {
-        if (prevData[key] !== nextData[key]) {
+    for (let i = 0; i < CRITICAL_DATA_KEYS.length; i++) {
+        if (prevData[CRITICAL_DATA_KEYS[i]] !== nextData[CRITICAL_DATA_KEYS[i]]) {
             return false;
         }
     }
@@ -287,9 +311,9 @@ const arePropsEqual = (prev: NodeProps, next: NodeProps) => {
         return false;
     }
     for (let i = 0; i < prevInputAssets.length; i++) {
-        if (prevInputAssets[i].id !== nextInputAssets[i].id ||
-            prevInputAssets[i].src !== nextInputAssets[i].src ||
-            prevInputAssets[i].type !== nextInputAssets[i].type) {
+        const pa = prevInputAssets[i];
+        const na = nextInputAssets[i];
+        if (pa.id !== na.id || pa.src !== na.src || pa.type !== na.type) {
             return false;
         }
     }
@@ -2524,7 +2548,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                       {/* Field Content */}
                                       <textarea
                                           className="w-full bg-transparent p-3 text-[11px] text-slate-300 leading-relaxed resize-none focus:outline-none custom-scrollbar"
-                                          style={{ minHeight: '80px' }}
+                                          style={STYLE_MIN_HEIGHT_80}
                                           value={value}
                                           onChange={(e) => onUpdate(node.id, { [key]: e.target.value })}
                                           placeholder={`等待${label}...`}
@@ -3015,7 +3039,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                                                       alt={`任务组 ${tg.taskNumber} 融合图`}
                                                                       className="w-full h-auto object-contain cursor-pointer hover:opacity-90 transition-opacity"
                                                                       onClick={() => onExpand?.(tg.referenceImage)}
-                                                                      style={{ maxHeight: '200px' }}
+                                                                      style={STYLE_MAX_HEIGHT_200}
                                                                   />
                                                                   {/* Action Buttons Overlay */}
                                                                   <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3674,7 +3698,7 @@ const NodeComponent: React.FC<NodeProps> = ({
             ) : (
                 <>
                     {node.data.image ? 
-                        <img ref={mediaRef as any} src={node.data.image} className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-105 bg-zinc-900" draggable={false} style={{ filter: showImageGrid ? 'blur(10px)' : 'none' }} onContextMenu={(e) => onMediaContextMenu?.(e, node.id, 'image', node.data.image!)} /> 
+                        <img ref={mediaRef as any} src={node.data.image} className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-105 bg-zinc-900" draggable={false} style={showImageGrid ? STYLE_BLUR_ON : STYLE_BLUR_OFF} onContextMenu={(e) => onMediaContextMenu?.(e, node.id, 'image', node.data.image!)} /> 
                     : 
                         <SecureVideo 
                             videoRef={mediaRef} // Pass Ref to Video
@@ -3684,7 +3708,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                             muted 
                             // autoPlay removed to rely on hover logic
                             onContextMenu={(e: React.MouseEvent) => onMediaContextMenu?.(e, node.id, 'video', node.data.videoUri!)} 
-                            style={{ filter: showImageGrid ? 'blur(10px)' : 'none' }} // Pass Style
+                            style={showImageGrid ? STYLE_BLUR_ON : STYLE_BLUR_OFF} // Pass Style
                         />
                     }
                     {node.status === NodeStatus.ERROR && <div className="absolute inset-0 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20"><AlertCircle className="text-red-500 mb-2" /><span className="text-xs text-red-200">{node.data.error}</span></div>}
@@ -3741,9 +3765,11 @@ const NodeComponent: React.FC<NodeProps> = ({
 
      // STORYBOARD_VIDEO_GENERATOR 和 SORA_VIDEO_GENERATOR 在特定状态下始终显示底部操作栏
      // PROMPT_INPUT 和 IMAGE_GENERATOR 始终显示操作栏（方便编辑）
+     // 但剧本分集的子节点（创意描述）不应始终显示生图操作栏
+     const isEpisodeChildNode = node.type === NodeType.PROMPT_INPUT && nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE);
      const isAlwaysOpen = (node.type === NodeType.STORYBOARD_VIDEO_GENERATOR && (node.data as any).status === 'prompting') ||
                           (node.type === NodeType.SORA_VIDEO_GENERATOR && (node.data as any).taskGroups && (node.data as any).taskGroups.length > 0) ||
-                          node.type === NodeType.PROMPT_INPUT ||
+                          (node.type === NodeType.PROMPT_INPUT && !isEpisodeChildNode) ||
                           node.type === NodeType.IMAGE_GENERATOR;
      const isOpen = isAlwaysOpen || (isHovered || isInputFocused);
 
@@ -4815,7 +4841,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                                  </button>
                              </div>
 
-                             <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1" style={{ maxHeight: '180px' }}>
+                             <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1" style={STYLE_MAX_HEIGHT_180}>
                                  {connectedStoryboardNodes.map((sbNode) => {
                                      const gridImages = sbNode.data.storyboardGridImages || [];
                                      const gridType = sbNode.data.storyboardGridType || '9';
@@ -5030,7 +5056,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">分镜描述 (Description)</span>
                             <textarea
                                 className="w-full bg-black/20 text-xs text-slate-200 placeholder-slate-500/60 p-2 focus:outline-none resize-none custom-scrollbar font-medium leading-relaxed rounded-lg border border-white/5 focus:border-purple-500/50"
-                                style={{ height: '80px' }}
+                                style={STYLE_HEIGHT_80}
                                 placeholder="输入分镜描述，或连接剧本分集子节点..."
                                 value={localPrompt}
                                 onChange={(e) => setLocalPrompt(e.target.value)}
@@ -5146,7 +5172,7 @@ const NodeComponent: React.FC<NodeProps> = ({
                         {!node.data.scriptOutline ? (
                             <>
                                 <div className="relative group/input bg-black/20 rounded-[12px]">
-                                    <textarea className="w-full bg-transparent text-xs text-slate-200 placeholder-slate-500/60 p-2 focus:outline-none resize-none custom-scrollbar font-medium leading-relaxed" style={{ height: '60px' }} placeholder="输入剧本核心创意..." value={localPrompt} onChange={(e) => setLocalPrompt(e.target.value)} onBlur={() => { setIsInputFocused(false); commitPrompt(); }} onFocus={() => setIsInputFocused(true)} onWheel={(e) => e.stopPropagation()} />
+                                    <textarea className="w-full bg-transparent text-xs text-slate-200 placeholder-slate-500/60 p-2 focus:outline-none resize-none custom-scrollbar font-medium leading-relaxed" style={STYLE_HEIGHT_60} placeholder="输入剧本核心创意..." value={localPrompt} onChange={(e) => setLocalPrompt(e.target.value)} onBlur={() => { setIsInputFocused(false); commitPrompt(); }} onFocus={() => setIsInputFocused(true)} onWheel={(e) => e.stopPropagation()} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <select className="bg-black/20 rounded-lg px-2 py-1.5 text-[10px] text-white border border-white/5 focus:border-orange-500/50 outline-none appearance-none hover:bg-white/5" value={node.data.scriptGenre || ''} onChange={e => onUpdate(node.id, { scriptGenre: e.target.value })}>
@@ -5771,30 +5797,43 @@ const NodeComponent: React.FC<NodeProps> = ({
   };
 
   const isInteracting = isDragging || isResizing || isGroupDragging;
+
+  // 性能优化：memoize容器样式对象，避免每次渲染创建新对象
+  const containerStyle = useMemo(() => ({
+      left: node.x, top: node.y, width: nodeWidth, height: nodeHeight,
+      background: isSelected ? 'rgba(28, 28, 30, 0.85)' as const : 'rgba(28, 28, 30, 0.6)' as const,
+      transition: isInteracting ? 'none' as const : 'all 0.5s cubic-bezier(0.32, 0.72, 0, 1)' as const,
+      backdropFilter: isInteracting ? 'none' as const : 'blur(24px)' as const,
+      boxShadow: isInteracting ? 'none' as const : undefined,
+      willChange: isInteracting ? 'left, top, width, height' as const : 'auto' as const
+  }), [node.x, node.y, nodeWidth, nodeHeight, isSelected, isInteracting]);
+
+  // 性能优化：memoize事件处理器闭包，避免每次渲染创建新函数
+  const handleNodeMouseDown = useCallback((e: React.MouseEvent) => onNodeMouseDown(e, node.id), [onNodeMouseDown, node.id]);
+  const handleNodeContextMenu = useCallback((e: React.MouseEvent) => onNodeContextMenu(e, node.id), [onNodeContextMenu, node.id]);
+  const handleInputPortMouseDown = useCallback((e: React.MouseEvent) => onPortMouseDown(e, node.id, 'input'), [onPortMouseDown, node.id]);
+  const handleInputPortMouseUp = useCallback((e: React.MouseEvent) => onPortMouseUp(e, node.id, 'input'), [onPortMouseUp, node.id]);
+  const handleOutputPortMouseDown = useCallback((e: React.MouseEvent) => onPortMouseDown(e, node.id, 'output'), [onPortMouseDown, node.id]);
+  const handleOutputPortMouseUp = useCallback((e: React.MouseEvent) => onPortMouseUp(e, node.id, 'output'), [onPortMouseUp, node.id]);
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => onResizeMouseDown(e, node.id, nodeWidth, nodeHeight), [onResizeMouseDown, node.id, nodeWidth, nodeHeight]);
+
   return (
     <div
         data-node-container="true"
         className={`absolute rounded-[24px] group ${isSelected ? 'ring-1 ring-cyan-500/50 shadow-[0_0_40px_-10px_rgba(34,211,238,0.3)] z-30' : 'ring-1 ring-white/10 hover:ring-white/20 z-10'}`}
-        style={{
-            left: node.x, top: node.y, width: nodeWidth, height: nodeHeight,
-            background: isSelected ? 'rgba(28, 28, 30, 0.85)' : 'rgba(28, 28, 30, 0.6)',
-            transition: isInteracting ? 'none' : 'all 0.5s cubic-bezier(0.32, 0.72, 0, 1)',
-            backdropFilter: isInteracting ? 'none' : 'blur(24px)',
-            boxShadow: isInteracting ? 'none' : undefined,
-            willChange: isInteracting ? 'left, top, width, height' : 'auto'
-        }}
-        onMouseDown={(e) => onNodeMouseDown(e, node.id)}
+        style={containerStyle}
+        onMouseDown={handleNodeMouseDown}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        onContextMenu={(e) => onNodeContextMenu(e, node.id)}
+        onContextMenu={handleNodeContextMenu}
     >
         {renderTitleBar()}
         {renderHoverToolbar()}
-        <div className={`absolute -left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/20 bg-[#1c1c1e] flex items-center justify-center transition-all duration-300 hover:scale-125 cursor-crosshair z-50 shadow-md ${isConnecting ? 'ring-2 ring-cyan-400 animate-pulse' : ''}`} onMouseDown={(e) => onPortMouseDown(e, node.id, 'input')} onMouseUp={(e) => onPortMouseUp(e, node.id, 'input')} title="Input"><Plus size={10} strokeWidth={3} className="text-white/50" /></div>
-        <div className={`absolute -right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/20 bg-[#1c1c1e] flex items-center justify-center transition-all duration-300 hover:scale-125 cursor-crosshair z-50 shadow-md ${isConnecting ? 'ring-2 ring-purple-400 animate-pulse' : ''}`} onMouseDown={(e) => onPortMouseDown(e, node.id, 'output')} onMouseUp={(e) => onPortMouseUp(e, node.id, 'output')} title="Output"><Plus size={10} strokeWidth={3} className="text-white/50" /></div>
+        <div className={`absolute -left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/20 bg-[#1c1c1e] flex items-center justify-center transition-all duration-300 hover:scale-125 cursor-crosshair z-50 shadow-md ${isConnecting ? 'ring-2 ring-cyan-400 animate-pulse' : ''}`} onMouseDown={handleInputPortMouseDown} onMouseUp={handleInputPortMouseUp} title="Input"><Plus size={10} strokeWidth={3} className="text-white/50" /></div>
+        <div className={`absolute -right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/20 bg-[#1c1c1e] flex items-center justify-center transition-all duration-300 hover:scale-125 cursor-crosshair z-50 shadow-md ${isConnecting ? 'ring-2 ring-purple-400 animate-pulse' : ''}`} onMouseDown={handleOutputPortMouseDown} onMouseUp={handleOutputPortMouseUp} title="Output"><Plus size={10} strokeWidth={3} className="text-white/50" /></div>
         <div className="w-full h-full flex flex-col relative rounded-[24px] overflow-hidden bg-zinc-900"><div className="flex-1 min-h-0 relative bg-zinc-900">{renderMediaContent()}</div></div>
         {renderBottomPanel()}
-        <div className="absolute -bottom-3 -right-3 w-6 h-6 flex items-center justify-center cursor-nwse-resize text-slate-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 z-50" onMouseDown={(e) => onResizeMouseDown(e, node.id, nodeWidth, nodeHeight)}><div className="w-1.5 h-1.5 rounded-full bg-current" /></div>
+        <div className="absolute -bottom-3 -right-3 w-6 h-6 flex items-center justify-center cursor-nwse-resize text-slate-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 z-50" onMouseDown={handleResizeMouseDown}><div className="w-1.5 h-1.5 rounded-full bg-current" /></div>
     </div>
   );
 };

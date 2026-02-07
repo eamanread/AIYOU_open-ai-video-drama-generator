@@ -12,10 +12,6 @@ import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 
 import { useLanguage } from './src/i18n/LanguageContext';
 import { Node } from './components/Node';
 import { SidebarDock } from './components/SidebarDock';
-import { AssistantPanel } from './components/AssistantPanel';
-import { SmartSequenceDock } from './components/SmartSequenceDock';
-import { SettingsPanel } from './components/SettingsPanel';
-import { DebugPanel } from './components/DebugPanel';
 import { ModelFallbackNotification } from './components/ModelFallbackNotification';
 import { AppNode, NodeType, NodeStatus, Connection, ContextMenuState, Group, Workflow, SmartSequenceItem, CharacterProfile, SoraTaskGroup } from './types';
 import { generateImageFromText, generateVideo, analyzeVideo, editImageWithText, planStoryboard, orchestrateVideoPrompt, compileMultiFramePrompt, urlToBase64, extractLastFrame, generateAudio, generateScriptPlanner, generateScriptEpisodes, generateCinematicStoryboard, extractCharactersFromText, generateCharacterProfile, detectTextInImage, analyzeDrama } from './services/geminiService';
@@ -50,6 +46,10 @@ const SketchEditor = lazy(() => import('./components/SketchEditor').then(m => ({
 const SonicStudio = lazy(() => import('./components/SonicStudio').then(m => ({ default: m.SonicStudio })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(m => ({ default: m.CharacterLibrary })));
 const CharacterDetailModal = lazy(() => import('./components/CharacterDetailModal').then(m => ({ default: m.CharacterDetailModal })));
+const AssistantPanel = lazy(() => import('./components/AssistantPanel').then(m => ({ default: m.AssistantPanel })));
+const SmartSequenceDock = lazy(() => import('./components/SmartSequenceDock').then(m => ({ default: m.SmartSequenceDock })));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
+const DebugPanel = lazy(() => import('./components/DebugPanel').then(m => ({ default: m.DebugPanel })));
 import {
     Plus, Copy, Trash2, Type, Image as ImageIcon, Video as VideoIcon,
     ScanFace, Brush, MousePointerClick, LayoutTemplate, X, Film, Link, RefreshCw, Upload,
@@ -984,6 +984,12 @@ export const App = () => {
       rafRef.current = requestAnimationFrame(() => {
           rafRef.current = null;
           canvas.updateMousePos(clientX, clientY);
+
+          // Only commit mousePos to state when actively creating a connection
+          // (ConnectionLayer needs mousePos as a prop to render the dragging line)
+          if (connectionStartRef.current) {
+              canvas.commitMousePos();
+          }
 
           if (selectionRect) {
               setSelectionRect((prev:any) => prev ? ({ ...prev, currentX: clientX, currentY: clientY }) : null);
@@ -3293,15 +3299,13 @@ export const App = () => {
 
               for (const name of charactersNeedingGeneration) {
                   const config = configs[name] || { method: 'AI_AUTO' };
-                  const existingChar = generatedChars.find(c => c.name === name);
 
-                  // 设置为生成中状态
-                  let charProfile = existingChar;
-                  if (!charProfile) {
-                      charProfile = { id: '', name, status: 'GENERATING' } as any;
-                      newGeneratedChars.push(charProfile!);
+                  // 设置为生成中状态（不可变更新）
+                  const existingIdx = newGeneratedChars.findIndex(c => c.name === name);
+                  if (existingIdx >= 0) {
+                      newGeneratedChars[existingIdx] = { ...newGeneratedChars[existingIdx], status: 'GENERATING' };
                   } else {
-                      charProfile.status = 'GENERATING';
+                      newGeneratedChars.push({ id: '', name, status: 'GENERATING' } as any);
                   }
                   handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
 
@@ -3311,6 +3315,8 @@ export const App = () => {
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
                           newGeneratedChars[idx] = { ...libChar.data, id: `char-inst-${Date.now()}-${name}`, status: 'SUCCESS' };
                       }
+                      // LIBRARY 分支不走 handleCharacterActionNew，需要手动更新
+                      handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
                   } else if (config.method === 'SUPPORTING_ROLE') {
                       // SUPPORTING CHARACTER: 只生成基础信息，不生成图片
                       const context = recursiveUpstreamTexts.join('\n');
@@ -3353,6 +3359,8 @@ export const App = () => {
                           const idx = newGeneratedChars.findIndex(c => c.name === name);
                           newGeneratedChars[idx] = { ...newGeneratedChars[idx], status: 'ERROR', error: e.message };
                       }
+                      // SUPPORTING_ROLE 分支不走 handleCharacterActionNew，需要手动更新
+                      handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
                   } else {
                       // 主角：只生成基础信息，不自动生成表情和三视图
                       // 表情和三视图需要用户额外点击生成
@@ -3373,16 +3381,19 @@ export const App = () => {
 
                           console.log('[CHARACTER_NODE] handleCharacterActionNew returned successfully for:', name);
 
-                          // 更新状态为生成完成
-                          const idx = newGeneratedChars.findIndex(c => c.name === name);
-                          if (idx >= 0) {
-                              const updatedChar = nodesRef.current.find(n => n.id === id)?.data?.generatedCharacters?.find(c => c.name === name);
-                              if (updatedChar) {
-                                  newGeneratedChars[idx] = updatedChar;
-                                  console.log('[CHARACTER_NODE] Updated character from node:', name, 'status:', updatedChar.status);
-                              } else {
-                                  console.warn('[CHARACTER_NODE] Could not find updated character in node:', name);
+                          // 从 nodesRef 获取最新的完整角色列表，同步到 newGeneratedChars
+                          // 这确保了 handleCharacterActionNew 内部通过 updateNodeUI 更新的所有角色数据都被保留
+                          const latestNode = nodesRef.current.find(n => n.id === id);
+                          const latestChars = latestNode?.data?.generatedCharacters || [];
+                          if (latestChars.length > 0) {
+                              // 用最新数据替换 newGeneratedChars 中已有的角色
+                              for (const latestChar of latestChars) {
+                                  const idx = newGeneratedChars.findIndex(c => c.name === latestChar.name);
+                                  if (idx >= 0) {
+                                      newGeneratedChars[idx] = { ...latestChar };
+                                  }
                               }
+                              console.log('[CHARACTER_NODE] Synced all characters from latest node data after:', name);
                           }
 
                           console.log('[CHARACTER_NODE] Profile generation completed for:', name);
@@ -3401,34 +3412,21 @@ export const App = () => {
                       }
                   }
 
-                  // Update after each character is processed (for real-time feedback)
-                  handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
+                  // handleCharacterActionNew 内部已通过 updateNodeUI 更新了 node.data
+                  // 不再在此处重复调用 handleNodeUpdate，避免用过时数据覆盖
               }
 
-              // Check if any characters were processed
-              const anyProcessed = newGeneratedChars.some(c => c.status === 'GENERATING' || c.status === 'SUCCESS' || c.status === 'ERROR');
-              if (!anyProcessed && names.length > 0) {
-                  // All characters were skipped - they're already in SUCCESS state
-                  console.log('[CHARACTER_NODE] All characters already generated, no action needed');
-                  handleNodeUpdate(id, { generatedCharacters: [...newGeneratedChars] });
-                  setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
-              } else if (names.length === 0) {
-                  // No characters to generate
-                  console.log('[CHARACTER_NODE] No characters to generate');
-                  setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.IDLE } : n));
-              } else {
-                  // Characters were processed - check if all completed successfully
-                  const allSuccess = newGeneratedChars.every(c => c.status === 'SUCCESS');
-                  const hasError = newGeneratedChars.some(c => c.status === 'ERROR');
-
-                  if (allSuccess) {
-                      console.log('[CHARACTER_NODE] All characters generated successfully');
-                      setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
-                  } else if (hasError) {
-                      console.log('[CHARACTER_NODE] Some characters failed to generate');
-                      setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.ERROR } : n));
-                  }
-              }
+              // 从最新的 node state 判断最终状态，避免使用过时的 newGeneratedChars
+              setNodes(p => p.map(n => {
+                  if (n.id !== id) return n;
+                  const chars = n.data.generatedCharacters || [];
+                  if (chars.length === 0) return { ...n, status: NodeStatus.IDLE };
+                  const allDone = chars.every(c => c.status === 'SUCCESS' || c.status === 'IDLE');
+                  const hasError = chars.some(c => c.status === 'ERROR');
+                  if (allDone) return { ...n, status: NodeStatus.SUCCESS };
+                  if (hasError) return { ...n, status: NodeStatus.ERROR };
+                  return { ...n, status: NodeStatus.SUCCESS };
+              }));
 
           } else if (node.type === NodeType.STYLE_PRESET) {
               // --- Style Preset Generation Logic ---
@@ -4597,9 +4595,9 @@ COMPOSITION REQUIREMENTS:
           id: `wf-${Date.now()}`, 
           title: `工作流 ${new Date().toLocaleDateString()}`, 
           thumbnail, 
-          nodes: JSON.parse(JSON.stringify(nodes)), 
-          connections: JSON.parse(JSON.stringify(connections)), 
-          groups: JSON.parse(JSON.stringify(groups)) 
+          nodes: structuredClone(nodes),
+          connections: structuredClone(connections),
+          groups: structuredClone(groups)
       };
       setWorkflows(prev => [newWf, ...prev]);
   };
@@ -4612,13 +4610,13 @@ COMPOSITION REQUIREMENTS:
       const connectionsInGroup = connections.filter(c => nodeIds.has(c.from) && nodeIds.has(c.to));
       const thumbNode = nodesInGroup.find(n => n.data.image);
       const thumbnail = thumbNode ? thumbNode.data.image : '';
-      const newWf: Workflow = { id: `wf-${Date.now()}`, title: group.title || '未命名工作流', thumbnail: thumbnail || '', nodes: JSON.parse(JSON.stringify(nodesInGroup)), connections: JSON.parse(JSON.stringify(connectionsInGroup)), groups: [JSON.parse(JSON.stringify(group))] };
+      const newWf: Workflow = { id: `wf-${Date.now()}`, title: group.title || '未命名工作流', thumbnail: thumbnail || '', nodes: structuredClone(nodesInGroup), connections: structuredClone(connectionsInGroup), groups: [structuredClone(group)] };
       setWorkflows(prev => [newWf, ...prev]);
   };
 
   const loadWorkflow = (id: string) => {
       const wf = workflows.find(w => w.id === id);
-      if (wf) { saveHistory(); setNodes(JSON.parse(JSON.stringify(wf.nodes))); setConnections(JSON.parse(JSON.stringify(wf.connections))); setGroups(JSON.parse(JSON.stringify(wf.groups))); setSelectedWorkflowId(id); }
+      if (wf) { saveHistory(); setNodes(structuredClone(wf.nodes)); setConnections(structuredClone(wf.connections)); setGroups(structuredClone(wf.groups)); setSelectedWorkflowId(id); }
   };
 
   const deleteWorkflow = (id: string) => { setWorkflows(prev => prev.filter(w => w.id !== id)); if (selectedWorkflowId === id) setSelectedWorkflowId(null); };
@@ -4631,7 +4629,7 @@ COMPOSITION REQUIREMENTS:
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); setSelectedNodeIds(nodesRef.current.map(n => n.id)); return; }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') { const lastSelected = selectedNodeIds[selectedNodeIds.length - 1]; if (lastSelected) { const nodeToCopy = nodesRef.current.find(n => n.id === lastSelected); if (nodeToCopy) { e.preventDefault(); setClipboard(JSON.parse(JSON.stringify(nodeToCopy))); } } return; }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') { const lastSelected = selectedNodeIds[selectedNodeIds.length - 1]; if (lastSelected) { const nodeToCopy = nodesRef.current.find(n => n.id === lastSelected); if (nodeToCopy) { e.preventDefault(); setClipboard(structuredClone(nodeToCopy)); } } return; }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') { if (clipboard) { e.preventDefault(); saveHistory(); const newNode: AppNode = { ...clipboard, id: `n-${Date.now()}-${Math.floor(Math.random()*1000)}`, x: clipboard.x + 50, y: clipboard.y + 50, status: NodeStatus.IDLE, inputs: [] }; setNodes(prev => [...prev, newNode]); setSelectedNodeIds([newNode.id]); } return; }
         if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedGroupId) { saveHistory(); setGroups(prev => prev.filter(g => g.id !== selectedGroupId)); setSelectedGroupId(null); return; } if (selectedNodeIds.length > 0) { deleteNodes(selectedNodeIds); } }
     };
@@ -4733,7 +4731,7 @@ COMPOSITION REQUIREMENTS:
           onDragOver={handleCanvasDragOver} onDrop={handleCanvasDrop}
       >
           <div className="absolute inset-0 noise-bg" />
-          <div className="absolute inset-0 pointer-events-none opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle, #aaa 1px, transparent 1px)', backgroundSize: `${32 * canvas.scale}px ${32 * canvas.scale}px`, backgroundPosition: `${canvas.pan.x}px ${canvas.pan.y}px` }} />
+          <div ref={canvas.gridBgRef} className="absolute inset-0 pointer-events-none opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle, #aaa 1px, transparent 1px)', backgroundSize: `${32 * canvas.scale}px ${32 * canvas.scale}px`, backgroundPosition: `${canvas.pan.x}px ${canvas.pan.y}px` }} />
 
           {/* Welcome Screen Component */}
           <WelcomeScreen visible={nodes.length === 0} />
@@ -4752,7 +4750,7 @@ COMPOSITION REQUIREMENTS:
           <input type="file" ref={replaceVideoInputRef} className="hidden" accept="video/*" onChange={(e) => handleReplaceFile(e, 'video')} />
           <input type="file" ref={replaceImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleReplaceFile(e, 'image')} />
 
-          <div style={{ transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`, width: '100%', height: '100%', transformOrigin: '0 0' }} className="w-full h-full">
+          <div ref={canvas.canvasTransformRef} style={{ transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`, width: '100%', height: '100%', transformOrigin: '0 0' }} className="w-full h-full">
               {/* Groups Layer */}
               {groups.map(g => (
                   <div 
@@ -4845,7 +4843,7 @@ COMPOSITION REQUIREMENTS:
                   switch (action) {
                       case 'copy':
                           const targetNode = nodes.find(n => n.id === data);
-                          if (targetNode) setClipboard(JSON.parse(JSON.stringify(targetNode)));
+                          if (targetNode) setClipboard(structuredClone(targetNode));
                           break;
 
                       case 'replace':
