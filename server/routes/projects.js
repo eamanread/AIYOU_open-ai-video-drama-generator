@@ -88,6 +88,78 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// PUT /api/projects/:id/snapshot - 一次性保存整个项目快照（nodes + connections + groups）
+router.put('/:id/snapshot', async (req, res) => {
+  try {
+    const db = getDB();
+    const { id } = req.params;
+    const { nodes, connections, groups } = req.body;
+
+    const project = await db('projects').where({ id }).first();
+    if (!project) return res.status(404).json({ success: false, error: '项目不存在' });
+
+    await db.transaction(async (trx) => {
+      // Clear existing data
+      await trx('connections').where({ project_id: id }).del();
+      await trx('nodes').where({ project_id: id }).del();
+      await trx('groups').where({ project_id: id }).del();
+
+      // Insert nodes
+      if (Array.isArray(nodes) && nodes.length > 0) {
+        const nodeRows = nodes.map(n => ({
+          id: n.id,
+          project_id: id,
+          type: n.type,
+          title: n.title || '',
+          x: n.x || 0,
+          y: n.y || 0,
+          width: n.width || 420,
+          height: n.height || 360,
+          status: n.status || 'IDLE',
+          data: JSON.stringify(n.data || {}),
+          inputs: n.inputs || [],
+        }));
+        await trx('nodes').insert(nodeRows);
+      }
+
+      // Insert connections
+      if (Array.isArray(connections) && connections.length > 0) {
+        const connRows = connections.map(c => ({
+          id: c.id || uuidv4(),
+          project_id: id,
+          from_node: c.from,
+          to_node: c.to,
+        }));
+        await trx('connections').insert(connRows);
+      }
+
+      // Insert groups
+      if (Array.isArray(groups) && groups.length > 0) {
+        const groupRows = groups.map(g => ({
+          id: g.id || uuidv4(),
+          project_id: id,
+          title: g.title || '',
+          x: g.x || 0,
+          y: g.y || 0,
+          width: g.width || 600,
+          height: g.height || 400,
+          color: g.color || '#3b82f6',
+          node_ids: g.nodeIds || [],
+          data: JSON.stringify(g.data || {}),
+        }));
+        await trx('groups').insert(groupRows);
+      }
+
+      // Update project timestamp
+      await trx('projects').where({ id }).update({ updated_at: new Date() });
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // DELETE /api/projects/:id - 删除项目（级联删除所有关联数据）
 router.delete('/:id', async (req, res) => {
   try {

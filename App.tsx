@@ -36,6 +36,8 @@ import { useViewportCulling } from './hooks/useViewportCulling';
 import { useWindowSize } from './hooks/useWindowSize';
 import { useUIStore } from './stores/ui.store';
 import { useEditorStore } from './stores/editor.store';
+import { getProjects, getProject, createProject, isApiAvailable } from './services/api';
+import { initSync, setSyncProjectId, getSyncProjectId, createStoreSubscription, syncFullSnapshot, setOnlineStatus } from './services/syncMiddleware';
 import { useNodeActions } from './handlers/useNodeActions';
 import { useWorkflowActions } from './handlers/useWorkflowActions';
 import { useKeyboardShortcuts } from './handlers/useKeyboardShortcuts';
@@ -235,11 +237,64 @@ export const App = () => {
 
       const loadData = async () => {
           try {
+            // 尝试从 PostgreSQL 加载
+            const apiOnline = await initSync();
+
+            if (apiOnline) {
+              const projectsRes = await getProjects();
+              let projectId: string | null = null;
+
+              if (projectsRes.success && projectsRes.data && projectsRes.data.length > 0) {
+                // 加载最近的项目
+                projectId = projectsRes.data[0].id;
+              } else {
+                // 没有项目，创建默认项目
+                const createRes = await createProject('默认项目');
+                if (createRes.success && createRes.data) {
+                  projectId = createRes.data.id;
+                }
+              }
+
+              if (projectId) {
+                setSyncProjectId(projectId);
+                const projectRes = await getProject(projectId);
+                if (projectRes.success && projectRes.data) {
+                  const { nodes: dbNodes, connections: dbConns, groups: dbGroups } = projectRes.data;
+
+                  if (dbNodes && dbNodes.length > 0) {
+                    // 从 PostgreSQL 加载成功
+                    const mappedNodes = dbNodes.map((n: any) => ({
+                      ...n,
+                      data: typeof n.data === 'string' ? JSON.parse(n.data) : (n.data || {}),
+                      inputs: n.inputs || [],
+                      title: getNodeNameCN(n.type),
+                    }));
+                    setNodes(mappedNodes);
+                    const mappedConns = (dbConns || []).map((c: any) => ({
+                      id: c.id,
+                      from: c.from_node || c.from,
+                      to: c.to_node || c.to,
+                    }));
+                    setConnections(mappedConns);
+                    setGroups(dbGroups || []);
+
+                    // 仍然加载 assets 和 workflows 从 IndexedDB（这些不在 PostgreSQL 中）
+                    const sAssets = await loadFromStorage<any[]>('assets'); if (sAssets) setAssetHistory(sAssets);
+                    const sWfs = await loadFromStorage<Workflow[]>('workflows'); if (sWfs) setWorkflows(sWfs);
+
+                    setOnlineStatus(true);
+                    return; // 成功从 PostgreSQL 加载
+                  }
+                }
+              }
+            }
+
+            // Fallback: 从 IndexedDB 加载
+            setOnlineStatus(false);
             const sAssets = await loadFromStorage<any[]>('assets'); if (sAssets) setAssetHistory(sAssets);
             const sWfs = await loadFromStorage<Workflow[]>('workflows'); if (sWfs) setWorkflows(sWfs);
             let sNodes = await loadFromStorage<AppNode[]>('nodes');
             if (sNodes) {
-              // 数据迁移：将英文标题更新为中文标题
               sNodes = sNodes.map(node => ({
                 ...node,
                 title: getNodeNameCN(node.type)
@@ -248,6 +303,14 @@ export const App = () => {
             }
             const sConns = await loadFromStorage<Connection[]>('connections'); if (sConns) setConnections(sConns);
             const sGroups = await loadFromStorage<Group[]>('groups'); if (sGroups) setGroups(sGroups);
+
+            // 如果 API 在线但项目为空，上传本地数据作为初始快照
+            if (apiOnline && getSyncProjectId()) {
+              const state = useEditorStore.getState();
+              if (state.nodes.length > 0) {
+                syncFullSnapshot(state.nodes, state.connections, state.groups);
+              }
+            }
           } catch (e) {
             console.error("Failed to load storage", e);
           } finally {
@@ -469,13 +532,20 @@ export const App = () => {
   }, [isLoaded]); // 移除 nodes 依赖，避免循环触发
 
   useEffect(() => {
-      if (!isLoaded) return; 
+      if (!isLoaded) return;
       saveToStorage('assets', assetHistory);
       saveToStorage('workflows', workflows);
       saveToStorage('nodes', nodes);
       saveToStorage('connections', connections);
       saveToStorage('groups', groups);
   }, [assetHistory, workflows, nodes, connections, groups, isLoaded]);
+
+  // PostgreSQL 自动同步：订阅 store 变更
+  useEffect(() => {
+      if (!isLoaded) return;
+      const unsubscribe = createStoreSubscription(useEditorStore);
+      return () => unsubscribe();
+  }, [isLoaded]);
 
   const getNodeNameCN = (type: string) => {
       switch(type) {
