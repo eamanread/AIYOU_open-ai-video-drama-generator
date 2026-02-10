@@ -52,14 +52,14 @@ export const BottomPanel: React.FC<BottomPanelContext> = (ctx) => {
      // PROMPT_INPUT 和 IMAGE_GENERATOR 始终显示操作栏（方便编辑）
      // 但剧本分集的子节点（创意描述）不应始终显示生图操作栏
      const isEpisodeChildNode = node.type === NodeType.PROMPT_INPUT && nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE);
-     const isAlwaysOpen = (node.type === NodeType.STORYBOARD_VIDEO_GENERATOR && (node.data as any).status === 'prompting') ||
-                          (node.type === NodeType.SORA_VIDEO_GENERATOR && (node.data as any).taskGroups && (node.data as any).taskGroups.length > 0) ||
+     const isAlwaysOpen = (node.type === NodeType.STORYBOARD_VIDEO_GENERATOR && node.data.status === 'prompting') ||
+                          (node.type === NodeType.SORA_VIDEO_GENERATOR && node.data.taskGroups && node.data.taskGroups.length > 0) ||
                           (node.type === NodeType.PROMPT_INPUT && !isEpisodeChildNode) ||
                           node.type === NodeType.IMAGE_GENERATOR;
      const isPanelOpen = isAlwaysOpen || (isHovered || isInputFocused);
 
      // 获取当前画布缩放比例，用于反向缩放底部操作栏以保持按钮可点击
-     const canvasScale = (window as any).__canvasScale || 1;
+     const canvasScale = ((window as unknown as { __canvasScale?: number }).__canvasScale) || 1;
      const inverseScale = canvasScale < 0.5 ? 1 / canvasScale : 1; // 只在缩放小于50%时才反向缩放
 
      // Special handling for DRAMA_ANALYZER
@@ -1778,7 +1778,7 @@ export const BottomPanel: React.FC<BottomPanelContext> = (ctx) => {
                                             break;
                                         case NodeType.VIDEO_EDITOR:
                                             // Chain editing: get output video
-                                            videoUrl = (inputNode.data as any).outputVideoUrl || '';
+                                            videoUrl = (inputNode.data as Record<string, any>).outputVideoUrl || '';
                                             break;
                                     }
 
