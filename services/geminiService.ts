@@ -1835,7 +1835,7 @@ export const connectLiveSession = async (
     const sessionPromise = ai.live.connect({
         model,
         callbacks: {
-            onopen: () => console.log("Live Session Connected"),
+            onopen: () => {},
             onmessage: (msg) => {
                 if (msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
                     onAudioData(msg.serverContent.modelTurn.parts[0].inlineData.data);
