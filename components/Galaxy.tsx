@@ -148,7 +148,11 @@ export const Galaxy: React.FC<GalaxyProps> = React.memo(({
           currentRadius = star.initialRadius + driftOffset;
 
           if (currentRadius > maxDist) {
-            currentRadius = Math.random() * 10;
+            // 重置星星到中心附近，并重新分配角度和速度
+            star.initialRadius = Math.random() * 10;
+            star.driftAngle = Math.random() * Math.PI * 2;
+            star.driftSpeed = (Math.random() * 0.2 + 0.1) * starSpeed;
+            currentRadius = star.initialRadius;
           }
 
           x = centerX + Math.cos(star.driftAngle) * currentRadius;
