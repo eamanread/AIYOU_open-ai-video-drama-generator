@@ -44,7 +44,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({ isOpen, onCl
                                     <div className="aspect-square bg-zinc-900 relative">
                                         {/* Prefer 3-view or expression sheet as thumbnail */}
                                         {char.threeViewSheet || char.expressionSheet ? (
-                                            <img src={char.threeViewSheet || char.expressionSheet} loading="lazy" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                                            <img src={char.threeViewSheet || char.expressionSheet} alt={char.name || '角色'} loading="lazy" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-slate-700">
                                                 <User size={32} />

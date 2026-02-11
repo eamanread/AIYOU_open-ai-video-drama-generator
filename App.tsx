@@ -265,12 +265,13 @@ export const App = () => {
 
                   if (dbNodes && dbNodes.length > 0) {
                     // 从 PostgreSQL 加载成功
-                    const mappedNodes = dbNodes.map((n: any) => ({
-                      ...n,
-                      data: typeof n.data === 'string' ? JSON.parse(n.data) : (n.data || {}),
-                      inputs: n.inputs || [],
-                      title: getNodeNameCN(n.type),
-                    }));
+                    const mappedNodes = dbNodes.map((n: any) => {
+                      let data = n.data || {};
+                      if (typeof data === 'string') {
+                        try { data = JSON.parse(data); } catch { data = {}; }
+                      }
+                      return { ...n, data, inputs: n.inputs || [], title: getNodeNameCN(n.type) };
+                    });
                     setNodes(mappedNodes);
                     const mappedConns = (dbConns || []).map((c: any) => ({
                       id: c.id,

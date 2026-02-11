@@ -138,9 +138,8 @@ export const SmartSequenceDock: React.FC<SmartSequenceDockProps> = ({ isOpen, on
                      reader.readAsDataURL(file);
                  }));
                  Promise.all(readers).then(newItems => {
-                     // Append to end if dropping on container, or insert if tracking index
                      setFrames(p => [...p, ...newItems].slice(0, 10));
-                 });
+                 }).catch(() => {});
              }
         }
     };
@@ -157,7 +156,7 @@ export const SmartSequenceDock: React.FC<SmartSequenceDockProps> = ({ isOpen, on
                 });
                 reader.readAsDataURL(file);
             }));
-            Promise.all(readers).then(newItems => setFrames(p => [...p, ...newItems].slice(0, 10)));
+            Promise.all(readers).then(newItems => setFrames(p => [...p, ...newItems].slice(0, 10))).catch(() => {});
         }
         e.target.value = '';
     };
@@ -321,7 +320,7 @@ export const SmartSequenceDock: React.FC<SmartSequenceDockProps> = ({ isOpen, on
                 >
                     {frames.map((f, i) => (
                         <div key={f.id} className="flex-1 h-full relative border-r border-white/5 last:border-0 overflow-hidden">
-                            <img src={f.src} className="w-full h-full object-cover opacity-30 grayscale group-hover/strip:opacity-50 transition-opacity" />
+                            <img src={f.src} alt="序列帧" className="w-full h-full object-cover opacity-30 grayscale group-hover/strip:opacity-50 transition-opacity" />
                         </div>
                     ))}
                     
@@ -361,7 +360,7 @@ export const SmartSequenceDock: React.FC<SmartSequenceDockProps> = ({ isOpen, on
                                     onDragOver={(e) => handleDragOver(e, index)}
                                     onDrop={handleDrop}
                                 >
-                                    <img src={frame.src} className="w-full h-full object-cover pointer-events-none" />
+                                    <img src={frame.src} alt="序列帧" className="w-full h-full object-cover pointer-events-none" />
                                     
                                     {/* Index Badge */}
                                     <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center text-[8px] font-bold text-white/80 pointer-events-none">

@@ -193,7 +193,7 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
                                         }}
                                     >
                                         {a.type.includes('image') ? (
-                                            <img src={a.src} loading="lazy" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" draggable={false} />
+                                            <img src={a.src} alt="素材缩略图" loading="lazy" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" draggable={false} />
                                         ) : (
                                             <video src={a.src} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" draggable={false} />
                                         )}
@@ -252,7 +252,7 @@ export const SidebarDock: React.FC<SidebarDockProps> = ({
                                 >
                                     <div className="aspect-[2/1] bg-black/40 rounded-lg mb-2 overflow-hidden relative">
                                         {wf.thumbnail ? (
-                                            <img src={wf.thumbnail} loading="lazy" className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" draggable={false} />
+                                            <img src={wf.thumbnail} alt="工作流缩略图" loading="lazy" className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" draggable={false} />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-slate-600">
                                                 <WorkflowIcon size={24} />

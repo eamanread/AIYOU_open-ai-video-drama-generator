@@ -153,7 +153,7 @@ export const ExpandedView = ({ media, onClose }: { media: any, onClose: () => vo
                 )}
 
              </div>
-             <button onClick={handleClose} className="absolute top-6 left-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-colors z-[110]"><X size={24} /></button>
+             <button onClick={handleClose} aria-label="关闭" className="absolute top-6 left-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-colors z-[110]"><X size={24} /></button>
         </div>
     );
 };
