@@ -2,7 +2,7 @@
 // API日志调试面板
 
 import React, { useState, useEffect } from 'react';
-import { X, Download, Trash2, RefreshCw, Filter, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Download, Trash2, RefreshCw, Filter, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { apiLogger, APILogEntry } from '../services/apiLogger';
 
 interface DebugPanelProps {
@@ -16,6 +16,14 @@ export const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ isOpen, onClo
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [hidePollingLogs, setHidePollingLogs] = useState(true);  // 默认隐藏轮询日志
+    const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+    const handleCopy = (text: string, key: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopiedKey(key);
+            setTimeout(() => setCopiedKey(null), 1500);
+        });
+    };
 
     // 加载日志
     const loadLogs = () => {
@@ -262,6 +270,9 @@ export const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ isOpen, onClo
                                                         <span className="px-1.5 py-0.5 bg-cyan-500/20 text-cyan-300 rounded text-[10px]">
                                                             {log.request.enhancedPrompt?.length || 0} 字符
                                                         </span>
+                                                        <button onClick={() => handleCopy(log.request.enhancedPrompt || '', `prompt-${log.id}`)} className="ml-auto p-1 rounded hover:bg-white/10 transition-colors" title="复制">
+                                                            {copiedKey === `prompt-${log.id}` ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-slate-400" />}
+                                                        </button>
                                                     </h4>
                                                     <div className="bg-black/40 rounded p-3 max-h-96 overflow-y-auto custom-scrollbar">
                                                         <pre className="text-xs text-slate-200 whitespace-pre-wrap break-words font-mono">
@@ -285,7 +296,12 @@ export const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ isOpen, onClo
 
                                             {/* Request */}
                                             <div>
-                                                <h4 className="text-xs font-bold text-slate-400 mb-2">请求配置</h4>
+                                                <h4 className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-2">
+                                                    <span>请求配置</span>
+                                                    <button onClick={() => handleCopy(JSON.stringify({ model: log.request.model, options: log.request.options, generationConfig: log.request.generationConfig }, null, 2), `req-${log.id}`)} className="ml-auto p-1 rounded hover:bg-white/10 transition-colors" title="复制">
+                                                        {copiedKey === `req-${log.id}` ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-slate-400" />}
+                                                    </button>
+                                                </h4>
                                                 <div className="bg-black/40 rounded p-3 text-xs text-slate-300 font-mono overflow-x-auto">
                                                     <pre>{JSON.stringify({
                                                         model: log.request.model,
@@ -298,7 +314,12 @@ export const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ isOpen, onClo
                                             {/* Response Details */}
                                             {log.response?.details && (
                                                 <div>
-                                                    <h4 className="text-xs font-bold text-purple-400 mb-2">响应详情</h4>
+                                                    <h4 className="text-xs font-bold text-purple-400 mb-2 flex items-center gap-2">
+                                                        <span>响应详情</span>
+                                                        <button onClick={() => handleCopy(JSON.stringify(log.response.details, null, 2), `detail-${log.id}`)} className="ml-auto p-1 rounded hover:bg-white/10 transition-colors" title="复制">
+                                                            {copiedKey === `detail-${log.id}` ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-slate-400" />}
+                                                        </button>
+                                                    </h4>
                                                     <div className="bg-black/40 rounded p-3 text-xs text-slate-300 font-mono overflow-x-auto">
                                                         <pre>{JSON.stringify(log.response.details, null, 2)}</pre>
                                                     </div>
@@ -308,8 +329,11 @@ export const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ isOpen, onClo
                                             {/* Response */}
                                             {log.response && !log.response.details && (
                                                 <div>
-                                                    <h4 className="text-xs font-bold text-slate-400 mb-2">
-                                                        {log.status === 'error' ? '错误信息' : '响应数据'}
+                                                    <h4 className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-2">
+                                                        <span>{log.status === 'error' ? '错误信息' : '响应数据'}</span>
+                                                        <button onClick={() => handleCopy(JSON.stringify(log.response, null, 2), `resp-${log.id}`)} className="ml-auto p-1 rounded hover:bg-white/10 transition-colors" title="复制">
+                                                            {copiedKey === `resp-${log.id}` ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-slate-400" />}
+                                                        </button>
                                                     </h4>
                                                     <div className={`bg-black/40 rounded p-3 text-xs font-mono overflow-x-auto ${
                                                         log.status === 'error' ? 'text-red-300' : 'text-slate-300'

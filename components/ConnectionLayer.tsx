@@ -247,13 +247,9 @@ const areConnectionLayerPropsEqual = (
     if (prevNode.id !== nextNode.id) return false;
     if (prevNode.x !== nextNode.x || prevNode.y !== nextNode.y) return false;
     if (prevNode.width !== nextNode.width) return false;
-    // 只有高度变化时才需要检查（因为连接线的端点依赖于高度）
-    // 我们通过引用比较来判断节点数据是否变化
+    // 节点引用变化时，用 getNodeHeight 计算实际高度进行比较
     if (prevNode !== nextNode) {
-      // 如果节点引用变化了，需要检查关键属性
-      const prevHeight = prevNode.height || 600;
-      const nextHeight = nextNode.height || 600;
-      if (prevHeight !== nextHeight) return false;
+      if (next.getNodeHeight(prevNode) !== next.getNodeHeight(nextNode)) return false;
     }
   }
 

@@ -6,6 +6,7 @@
 import { LLMProvider, GenerateImageOptions } from './baseProvider';
 import { GeminiProvider } from './geminiProvider';
 import { YunwuProvider } from './yunwuProvider';
+import { CustomProvider } from './customProvider';
 import { LLMProviderType } from '../../types';
 
 /**
@@ -17,7 +18,8 @@ class LLMProviderManager {
   constructor() {
     this.providers = new Map<LLMProviderType, LLMProvider>([
       ['gemini', new GeminiProvider()],
-      ['yunwu', new YunwuProvider()]
+      ['yunwu', new YunwuProvider()],
+      ['custom', new CustomProvider()]
     ]);
 
     // 监听 API Key 更新事件
@@ -101,6 +103,11 @@ class LLMProviderManager {
    */
   isCurrentProviderConfigured(): boolean {
     const providerType = this.getCurrentProviderType();
+    if (providerType === 'custom') {
+      const apiKey = localStorage.getItem('CUSTOM_API_KEY');
+      const apiUrl = localStorage.getItem('CUSTOM_API_URL');
+      return !!(apiKey && apiKey.trim() && apiUrl && apiUrl.trim());
+    }
     const apiKeyKey = providerType === 'gemini' ? 'GEMINI_API_KEY' : 'YUNWU_API_KEY';
     const apiKey = localStorage.getItem(apiKeyKey);
     return !!(apiKey && apiKey.trim());
@@ -111,6 +118,10 @@ class LLMProviderManager {
    */
   getCurrentProviderApiKey(): string | null {
     const providerType = this.getCurrentProviderType();
+    if (providerType === 'custom') {
+      const apiKey = localStorage.getItem('CUSTOM_API_KEY');
+      return apiKey?.trim() || null;
+    }
     const apiKeyKey = providerType === 'gemini' ? 'GEMINI_API_KEY' : 'YUNWU_API_KEY';
     const apiKey = localStorage.getItem(apiKeyKey);
     return apiKey?.trim() || null;
@@ -161,3 +172,4 @@ export const llmProviderManager = new LLMProviderManager();
 export type { LLMProvider, GenerateImageOptions, GenerateContentOptions } from './baseProvider';
 export { GeminiProvider } from './geminiProvider';
 export { YunwuProvider } from './yunwuProvider';
+export { CustomProvider } from './customProvider';

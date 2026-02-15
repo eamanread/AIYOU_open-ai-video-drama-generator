@@ -272,12 +272,24 @@ export const App = () => {
                       }
                       return { ...n, data, inputs: n.inputs || [], title: getNodeNameCN(n.type) };
                     });
-                    setNodes(mappedNodes);
+                    // 兼容旧数据：标记 SCRIPT_EPISODE 的子节点为 isEpisodeChild
                     const mappedConns = (dbConns || []).map((c: any) => ({
                       id: c.id,
                       from: c.from_node || c.from,
                       to: c.to_node || c.to,
                     }));
+                    const nodeMap = new Map(mappedNodes.map((n: any) => [n.id, n]));
+                    const episodeChildIds = new Set(
+                      mappedConns
+                        .filter((c: any) => nodeMap.get(c.from)?.type === NodeType.SCRIPT_EPISODE)
+                        .map((c: any) => c.to)
+                    );
+                    const migratedNodes = mappedNodes.map((n: any) =>
+                      n.type === NodeType.PROMPT_INPUT && episodeChildIds.has(n.id) && !n.data.isEpisodeChild
+                        ? { ...n, data: { ...n.data, isEpisodeChild: true } }
+                        : n
+                    );
+                    setNodes(migratedNodes);
                     setConnections(mappedConns);
                     setGroups(dbGroups || []);
 
@@ -297,14 +309,24 @@ export const App = () => {
             const sAssets = await loadFromStorage<any[]>('assets'); if (sAssets) setAssetHistory(sAssets);
             const sWfs = await loadFromStorage<Workflow[]>('workflows'); if (sWfs) setWorkflows(sWfs);
             let sNodes = await loadFromStorage<AppNode[]>('nodes');
+            const sConns = await loadFromStorage<Connection[]>('connections');
             if (sNodes) {
+              // 兼容旧数据：标记 SCRIPT_EPISODE 的子节点为 isEpisodeChild
+              const episodeChildIds = new Set(
+                (sConns || [])
+                  .filter(c => sNodes!.find(n => n.id === c.from)?.type === NodeType.SCRIPT_EPISODE)
+                  .map(c => c.to)
+              );
               sNodes = sNodes.map(node => ({
                 ...node,
-                title: getNodeNameCN(node.type)
+                title: getNodeNameCN(node.type),
+                ...(node.type === NodeType.PROMPT_INPUT && episodeChildIds.has(node.id) && !node.data.isEpisodeChild
+                  ? { data: { ...node.data, isEpisodeChild: true } }
+                  : {}),
               }));
               setNodes(sNodes);
             }
-            const sConns = await loadFromStorage<Connection[]>('connections'); if (sConns) setConnections(sConns);
+            if (sConns) setConnections(sConns);
             const sGroups = await loadFromStorage<Group[]>('groups'); if (sGroups) setGroups(sGroups);
 
             // 如果 API 在线但项目为空，上传本地数据作为初始快照
@@ -1456,6 +1478,8 @@ export const App = () => {
     saveHistory,
     deleteNodes,
     undo,
+    zoomCanvas: canvas.zoomCanvas,
+    mousePosRef: canvas.mousePosRef,
   });
 
   const handleCanvasDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };

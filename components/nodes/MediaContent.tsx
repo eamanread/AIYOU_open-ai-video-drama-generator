@@ -690,6 +690,7 @@ export const MediaContent: React.FC<NodeContentContext> = (ctx) => {
                                       className={`flex-1 overflow-hidden relative flex items-center justify-center transition-all ${
                                           viewMode === 'preview' ? 'fixed inset-0 bg-black/95 z-[9999] p-8' : 'p-3'
                                       }`}
+                                      onMouseDown={(e) => e.stopPropagation()}
                                   >
                                       <img
                                           loading="lazy" ref={mediaRef as any}
@@ -763,7 +764,7 @@ export const MediaContent: React.FC<NodeContentContext> = (ctx) => {
 
                                   {/* Control Bar - Only show in normal mode */}
                                   {viewMode === 'normal' && (
-                                      <div className="flex items-center justify-between px-3 py-2 border-t border-white/10 bg-black/20">
+                                      <div className="flex items-center justify-between px-3 py-2 border-t border-white/10 bg-black/20" onMouseDown={(e) => e.stopPropagation()}>
                                           {/* Pagination Controls */}
                                           <div className="flex items-center gap-2">
                                               {hasMultiplePages && (

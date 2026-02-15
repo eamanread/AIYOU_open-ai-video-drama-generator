@@ -197,7 +197,7 @@ export class YunwuProvider implements SoraProvider {
 
         const data: any = await response.json();
 
-
+        console.log('[YunwuProvider] 原始 API 响应:', JSON.stringify(data, null, 2));
 
         // 提取嵌套的 detail 对象
         const detail = data.detail || {};
@@ -230,6 +230,14 @@ export class YunwuProvider implements SoraProvider {
 
         const mappedStatus = statusMap[apiStatus] || 'processing';
 
+        console.log('[YunwuProvider] 状态解析:', {
+          apiStatus,
+          mappedStatus,
+          videoUrl,
+          generationsCount: generations.length,
+          dataKeys: Object.keys(data),
+          detailKeys: Object.keys(detail),
+        });
         // 检查是否失败
         if (mappedStatus === 'error') {
           return {

@@ -54,7 +54,7 @@ export const BottomPanel: React.FC<BottomPanelContext> = (ctx) => {
      // PROMPT_INPUT 和 IMAGE_GENERATOR 始终显示操作栏（方便编辑）
      // 但剧本分集的子节点（创意描述）不应始终显示生图操作栏
      // 优先使用 node.data.isEpisodeChild 标记（不依赖 nodeQuery 时序），回退到 nodeQuery 查询
-     const isEpisodeChildNode = node.type === NodeType.PROMPT_INPUT && (node.data.isEpisodeChild || nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE));
+     const isEpisodeChildNode = node.type === NodeType.PROMPT_INPUT && (node.data.isEpisodeChild || node.id.startsWith('n-ep-') || nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE));
      const isAlwaysOpen = (node.type === NodeType.STORYBOARD_VIDEO_GENERATOR && node.data.status === 'prompting') ||
                           (node.type === NodeType.SORA_VIDEO_GENERATOR && node.data.taskGroups && node.data.taskGroups.length > 0) ||
                           (node.type === NodeType.PROMPT_INPUT && !isEpisodeChildNode) ||
@@ -618,10 +618,6 @@ export const BottomPanel: React.FC<BottomPanelContext> = (ctx) => {
          return (
              <div
                  className={`absolute top-full left-1/2 -translate-x-1/2 w-[98%] pt-2 z-50 flex flex-col items-center justify-start transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${isPanelOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-[-10px] scale-95 pointer-events-none'}`}
-                 style={{
-                     transform: `translateX(-50%) ${inverseScale !== 1 ? `scale(${inverseScale})` : ''}`,
-                     transformOrigin: 'top center'
-                 }}
              >
                  <div className={`w-full rounded-[20px] p-3 flex flex-col gap-3 ${GLASS_PANEL} relative z-[100]`} onMouseDown={e => { if ((e.target as HTMLElement).tagName !== 'SELECT' && (e.target as HTMLElement).tagName !== 'OPTION') e.stopPropagation(); }} onWheel={(e) => e.stopPropagation()}>
                      {/* Stage 1 (idle): 获取分镜按钮 */}
@@ -1591,7 +1587,7 @@ export const BottomPanel: React.FC<BottomPanelContext> = (ctx) => {
                         </button>
                     </div>
                 ) : (() => {
-                    const isEpisodeChild = node.type === NodeType.PROMPT_INPUT && (node.data.isEpisodeChild || nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE));
+                    const isEpisodeChild = node.type === NodeType.PROMPT_INPUT && (node.data.isEpisodeChild || node.id.startsWith('n-ep-') || nodeQuery?.hasUpstreamNode(node.id, NodeType.SCRIPT_EPISODE));
                     if (node.type === NodeType.PROMPT_INPUT) {
                     }
                     return { isEpisodeChild, nodeType: node.type };

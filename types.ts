@@ -14,8 +14,9 @@
  * LLM/图片生成 API 提供商类型
  * - gemini: Google 官方 Gemini API
  * - yunwu: 云雾 API（第三方代理）
+ * - custom: 自定义第三方 API（兼容 Gemini REST 格式）
  */
-export type LLMProviderType = 'gemini' | 'yunwu';
+export type LLMProviderType = 'gemini' | 'yunwu' | 'custom';
 
 /**
  * LLM API 配置接口
@@ -24,6 +25,8 @@ export interface LLMProviderConfig {
   provider: LLMProviderType;
   geminiApiKey?: string;
   yunwuApiKey?: string;
+  customApiUrl?: string;
+  customApiKey?: string;
 }
 
 export enum NodeType {

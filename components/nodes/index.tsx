@@ -16,7 +16,7 @@ import { StoryboardVideoNode, StoryboardVideoChildNode } from '../StoryboardVide
 import React, { memo, useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { IMAGE_MODELS, TEXT_MODELS, VIDEO_MODELS, AUDIO_MODELS } from '../../services/modelConfig';
 import { promptManager } from '../../services/promptManager';
-import { getNodeNameCN } from '../../utils/nodeHelpers';
+import { getNodeNameCN, getNodeInfo } from '../../utils/nodeHelpers';
 import { getAllModelsConfig, getAllSubModelNames } from '../../services/modelConfigLoader';
 
 // Extracted modules
@@ -36,6 +36,33 @@ import { SecureVideo, safePlay, safePause, AudioVisualizer, EpisodeViewer, Input
 import { MediaContent } from './MediaContent';
 import { BottomPanel } from './BottomPanel';
 
+/**
+ * 节点信息提示组件 — 叹号图标，hover 显示节点介绍和连接范围
+ */
+const NodeInfoTooltip = ({ type }: { type: NodeType }) => {
+  const [show, setShow] = useState(false);
+  const info = getNodeInfo(type);
+
+  return (
+    <div
+      className="relative ml-0.5"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <AlertCircle size={11} className="text-slate-500 hover:text-slate-300 cursor-help transition-colors" />
+      {show && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-[9999] w-56 p-2.5 bg-[#1c1c1e]/95 backdrop-blur-xl border border-white/15 rounded-lg shadow-2xl pointer-events-none">
+          <p className="text-[10px] text-slate-300 leading-relaxed mb-1.5">{info.description}</p>
+          <div className="border-t border-white/10 pt-1.5 space-y-1">
+            <p className="text-[9px] text-slate-500"><span className="text-cyan-400/80">接入 ←</span> {info.inputs}</p>
+            <p className="text-[9px] text-slate-500"><span className="text-amber-400/80">接出 →</span> {info.outputs}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // 性能优化：将关键数据字段列表提升为模块级常量，避免每次比较时重新创建数组
 const CRITICAL_DATA_KEYS: readonly string[] = [
     'prompt', 'model', 'aspectRatio', 'resolution', 'count',
@@ -45,7 +72,7 @@ const CRITICAL_DATA_KEYS: readonly string[] = [
     'generatedEpisodes',
     'episodeSplitCount', 'episodeModificationSuggestion', 'selectedChapter',
     'storyboardCount', 'storyboardDuration', 'storyboardStyle', 'storyboardGridType', 'storyboardShots',
-    'storyboardGridImage', 'storyboardGridImages', 'storyboardPanelOrientation',
+    'storyboardGridImage', 'storyboardGridImages', 'storyboardPanelOrientation', 'storyboardCurrentPage', 'storyboardTotalPages',
     'extractedCharacterNames', 'characterConfigs', 'generatedCharacters',
     'stylePrompt', 'negativePrompt', 'visualStyle',
     'error', 'progress', 'duration', 'quality', 'isCompliant',
@@ -610,6 +637,7 @@ const NodeComponent: React.FC<NodeProps> = ({
               {getNodeNameCN(node.type)}
             </span>
           )}
+          <NodeInfoTooltip type={node.type} />
           {isWorking && <Loader2 className="animate-spin w-3 h-3 text-cyan-400 ml-1" />}
           {/* ✅ 缓存指示器 */}
           {node.data.isCached && (

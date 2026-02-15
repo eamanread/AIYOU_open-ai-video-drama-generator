@@ -134,7 +134,7 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
                       <img
                         src={shot.splitImage}
                         alt={`分镜 ${shot.shotNumber}`}
-                        className="w-full aspect-video object-cover rounded-lg border-2 border-purple-500/50 cursor-pointer hover:border-purple-400 transition-all"
+                        className="w-full aspect-video object-contain rounded-lg border-2 border-purple-500/50 cursor-pointer hover:border-purple-400 transition-all"
                       />
                       <div className="absolute top-1 left-1 w-5 h-5 rounded bg-purple-500 flex items-center justify-center">
                         <Check size={12} className="text-white" />
@@ -179,7 +179,7 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
                       <img
                         src={shot.splitImage}
                         alt={`分镜 ${shot.shotNumber}`}
-                        className="w-16 h-10 rounded object-cover border border-white/10 shrink-0"
+                        className="w-16 h-10 rounded object-contain border border-white/10 shrink-0"
                       />
 
                       {/* Info */}
@@ -250,21 +250,7 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
           return;
         }
 
-        // 设置画布大小（根据图片数量决定布局）
-        const cols = Math.ceil(Math.sqrt(selectedShots.length));
-        const rows = Math.ceil(selectedShots.length / cols);
-        const imgWidth = 300;
-        const imgHeight = 169;
-        const padding = 10;
-
-        canvas.width = cols * imgWidth + (cols + 1) * padding;
-        canvas.height = rows * imgHeight + (rows + 1) * padding + 30; // 额外30px用于标题
-
-        // 填充背景
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 加载所有图片
+        // 先加载所有图片以获取实际尺寸
         const loadPromises = selectedShots.map((shot, index) => {
           return new Promise<HTMLImageElement>((resolve, reject) => {
             const img = new Image();
@@ -282,25 +268,51 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
 
         const images = await Promise.all(loadPromises);
 
-        // 绘制图片
+        // 根据实际图片尺寸计算统一的单元格大小
+        const maxNaturalWidth = Math.max(...images.map(img => img.naturalWidth));
+        const maxNaturalHeight = Math.max(...images.map(img => img.naturalHeight));
+        const cellAspect = maxNaturalWidth / maxNaturalHeight;
+
+        // 限制单元格最大尺寸为 400px 宽
+        const cellWidth = Math.min(400, maxNaturalWidth);
+        const cellHeight = Math.round(cellWidth / cellAspect);
+
+        const cols = Math.ceil(Math.sqrt(selectedShots.length));
+        const rows = Math.ceil(selectedShots.length / cols);
+        const padding = 10;
+
+        canvas.width = cols * cellWidth + (cols + 1) * padding;
+        canvas.height = rows * cellHeight + (rows + 1) * padding + 30;
+
+        // 填充背景
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 绘制图片（contain 模式：保持原始比例，居中绘制）
         images.forEach((img, index) => {
           const col = index % cols;
           const row = Math.floor(index / cols);
-          const x = padding + col * (imgWidth + padding);
-          const y = padding + 30 + row * (imgHeight + padding); // 30px偏移用于标题
+          const cellX = padding + col * (cellWidth + padding);
+          const cellY = padding + 30 + row * (cellHeight + padding);
 
-          // 绘制图片
-          ctx.drawImage(img, x, y, imgWidth, imgHeight);
+          // 计算 contain 缩放
+          const scale = Math.min(cellWidth / img.naturalWidth, cellHeight / img.naturalHeight);
+          const drawW = Math.round(img.naturalWidth * scale);
+          const drawH = Math.round(img.naturalHeight * scale);
+          const drawX = cellX + Math.round((cellWidth - drawW) / 2);
+          const drawY = cellY + Math.round((cellHeight - drawH) / 2);
+
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
 
           // 绘制边框
           ctx.strokeStyle = '#a855f7';
           ctx.lineWidth = 2;
-          ctx.strokeRect(x, y, imgWidth, imgHeight);
+          ctx.strokeRect(cellX, cellY, cellWidth, cellHeight);
 
           // 绘制序号
           ctx.fillStyle = '#fff';
           ctx.font = 'bold 16px Arial';
-          ctx.fillText(`#${index + 1}`, x + 10, y + 25);
+          ctx.fillText(`#${index + 1}`, cellX + 10, cellY + 25);
         });
 
         // 转换为 base64
@@ -329,27 +341,54 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               {/* Fused Image */}
               {fusedImage && (
-                <div className="mb-3 p-2 bg-black/40 rounded-lg border border-purple-500/30">
+                <div className="mb-3 p-2 bg-black/40 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-bold text-purple-300">融合参考图</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onExpand?.({
-                          type: 'image',
-                          src: fusedImage,
-                          rect: new DOMRect()
-                        });
-                      }}
-                      className="text-[9px] text-purple-400 hover:text-purple-300"
-                    >
-                      查看大图
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleImageFusion();
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        disabled={data.isLoadingFusion}
+                        className="text-[9px] text-orange-400 hover:text-orange-300 disabled:text-slate-600 transition-colors"
+                      >
+                        {data.isLoadingFusion ? '融合中...' : '重新生成'}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const link = document.createElement('a');
+                          link.href = fusedImage;
+                          link.download = `融合分镜图_${Date.now()}.png`;
+                          link.click();
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-[9px] text-green-400 hover:text-green-300 flex items-center gap-0.5"
+                      >
+                        <Download size={9} />
+                        下载
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onExpand?.({
+                            type: 'image',
+                            src: fusedImage,
+                            rect: new DOMRect()
+                          });
+                        }}
+                        className="text-[9px] text-purple-400 hover:text-purple-300"
+                      >
+                        查看大图
+                      </button>
+                    </div>
                   </div>
                   <img
                     src={fusedImage}
                     alt="融合分镜图"
-                    className="w-full rounded border border-white/10 cursor-pointer hover:border-purple-500/50 transition-all"
+                    className="w-full rounded cursor-pointer hover:opacity-90 transition-all"
                     onClick={(e) => {
                       e.stopPropagation();
                       onExpand?.({
@@ -369,7 +408,7 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
                     <img
                       src={shot.splitImage}
                       alt={`分镜 ${shot.shotNumber}`}
-                      className="w-full aspect-video object-cover rounded-lg border border-white/10"
+                      className="w-full aspect-video object-contain rounded-lg border border-white/10"
                     />
                     <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/80 to-transparent">
                       <span className="text-[10px] text-white font-medium">#{shot.shotNumber}</span>
@@ -392,7 +431,7 @@ const StoryboardVideoNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
                 }`}
               >
                 {data.isLoadingFusion ? <Loader2 className="animate-spin" size={12} /> : <ImageIcon size={12} />}
-                <span>{data.isLoadingFusion ? '融合中...' : '生成分镜融合图'}</span>
+                <span>{data.isLoadingFusion ? '融合中...' : fusedImage ? '重新生成融合图' : '生成分镜融合图'}</span>
               </button>
             </div>
           </div>
@@ -637,7 +676,7 @@ const StoryboardVideoChildNodeComponent: React.FC<StoryboardVideoNodeProps> = ({
               }
             }}
             src={videoUrl}
-            className="w-full h-full object-cover bg-zinc-900"
+            className="w-full h-full object-contain bg-zinc-900"
             loop
             playsInline
             controls  // ✅ 使用原生视频控件（包含下载按钮）

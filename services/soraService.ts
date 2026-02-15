@@ -201,9 +201,12 @@ export async function generateSoraVideo(
 ): Promise<SoraVideoResult> {
   try {
 
+    // 用局部变量跟踪 taskId，避免修改传入的只读对象
+    let soraTaskId = taskGroup.soraTaskId;
+
     // 1. 检查是否已提交过任务
-    if (taskGroup.soraTaskId && taskGroup.generationStatus === 'generating') {
-      onProgress?.(`继续轮询任务 ${taskGroup.soraTaskId}...`, taskGroup.progress || 0);
+    if (soraTaskId && taskGroup.generationStatus === 'generating') {
+      onProgress?.(`继续轮询任务 ${soraTaskId}...`, taskGroup.progress || 0);
     } else {
       // 2. 准备参考图片 URL（如果是 base64 则上传到 OSS）
       let referenceImageUrl = taskGroup.referenceImage;
@@ -220,9 +223,6 @@ export async function generateSoraVideo(
         try {
           const fileName = `sora-reference-${taskGroup.id}-${Date.now()}.png`;
           referenceImageUrl = await uploadFileToOSS(referenceImageUrl, fileName, ossConfig);
-
-          // 更新任务组的 referenceImage 为 OSS URL
-          taskGroup.referenceImage = referenceImageUrl;
         } catch (error: any) {
           console.error('[Sora Service] Failed to upload reference image:', error);
           throw new Error(`参考图片上传失败: ${error.message}`);
@@ -245,55 +245,29 @@ export async function generateSoraVideo(
         context
       );
 
+      soraTaskId = submitResult.id;
 
-      taskGroup.soraTaskId = submitResult.id;
-
-
-      if (!taskGroup.soraTaskId) {
+      if (!soraTaskId) {
         throw new Error('提交任务后未返回有效的任务 ID');
       }
-
-      taskGroup.generationStatus = 'generating';
     }
 
     // 3. 轮询直到完成
     onProgress?.('正在生成视频，请耐心等待...', 10);
 
     const result = await pollSoraTaskUntilComplete(
-      taskGroup.soraTaskId!,
+      soraTaskId!,
       (progress) => {
-        taskGroup.progress = progress;
         onProgress?.(`视频生成中... ${progress}%`, progress);
       },
       5000,
       context
     );
 
-    // 4. 更新状态
-    if (result.status === 'completed') {
-      taskGroup.generationStatus = 'completed';
-      taskGroup.progress = 100;
-      taskGroup.videoMetadata = {
-        duration: parseFloat(result.duration || '0'),
-        resolution: '1080p',
-        fileSize: 0,
-        createdAt: new Date()
-      };
-    } else if (result.status === 'error') {
-      taskGroup.generationStatus = 'failed';
-      // 使用具体的错误原因
-      const errorReason = result.violationReason || result.quality || '生成失败，请重试';
-      taskGroup.error = `生成失败: ${errorReason}`;
-    }
-
-    // ✅ 调试日志：返回前检查result.taskId
-
     return result;
 
   } catch (error: any) {
     console.error('[Sora Service] Generate video failed:', error);
-    taskGroup.generationStatus = 'failed';
-    taskGroup.error = error.message || '生成失败';
     throw error;
   }
 }

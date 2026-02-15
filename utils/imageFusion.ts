@@ -40,9 +40,9 @@ export async function fuseStoryboardImages(
         splitShots.map(shot => loadImage(shot.splitImage))
     );
 
-    // 统一图片尺寸（使用第一张图片的尺寸作为基准）
-    const imgWidth = images[0].width;
-    const imgHeight = images[0].height;
+    // 计算单元格尺寸（取所有图片的最大宽高，保证每张图都能完整显示）
+    const imgWidth = Math.max(...images.map(img => img.width));
+    const imgHeight = Math.max(...images.map(img => img.height));
 
     // 计算布局
     let canvasWidth: number;
@@ -106,10 +106,14 @@ export async function fuseStoryboardImages(
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    // 绘制图片
+    // 绘制图片（contain 模式，保持原始比例居中绘制）
     positions.forEach(({ x, y, image, index }) => {
-        // 绘制图片
-        ctx.drawImage(image, x, y, imgWidth, imgHeight);
+        const scale = Math.min(imgWidth / image.width, imgHeight / image.height);
+        const drawW = Math.round(image.width * scale);
+        const drawH = Math.round(image.height * scale);
+        const drawX = x + Math.round((imgWidth - drawW) / 2);
+        const drawY = y + Math.round((imgHeight - drawH) / 2);
+        ctx.drawImage(image, drawX, drawY, drawW, drawH);
 
         // 绘制标号
         if (showNumbers) {
@@ -257,9 +261,9 @@ export async function fuseStoryboardWithCharacterViews(
         splitShots.map(shot => loadImage(shot.splitImage))
     );
 
-    const firstImg = shotImages[0];
-    const imgWidth = firstImg.width;
-    const imgHeight = firstImg.height;
+    // 计算单元格尺寸（取所有图片的最大宽高，保证每张图都能完整显示）
+    const imgWidth = Math.max(...shotImages.map(img => img.width));
+    const imgHeight = Math.max(...shotImages.map(img => img.height));
 
     // 计算布局
     const numShots = shotImages.length;
@@ -278,14 +282,19 @@ export async function fuseStoryboardWithCharacterViews(
     storyboardCtx.fillStyle = bgColor;
     storyboardCtx.fillRect(0, 0, storyboardWidth, storyboardHeight);
 
-    // 绘制分镜图
+    // 绘制分镜图（contain 模式，保持原始比例居中绘制）
     shotImages.forEach((img, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = padding + col * (imgWidth + padding);
         const y = padding + row * (imgHeight + padding);
 
-        storyboardCtx.drawImage(img, x, y, imgWidth, imgHeight);
+        const scale = Math.min(imgWidth / img.width, imgHeight / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        const drawX = x + Math.round((imgWidth - drawW) / 2);
+        const drawY = y + Math.round((imgHeight - drawH) / 2);
+        storyboardCtx.drawImage(img, drawX, drawY, drawW, drawH);
 
         // 绘制序号
         if (showNumbers) {

@@ -25,6 +25,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
   const [llmProvider, setLlmProvider] = useState<LLMProviderType>('gemini');
   const [yunwuLlmApiKey, setYunwuLlmApiKey] = useState('');
   const [showYunwuLlmApiKey, setShowYunwuLlmApiKey] = useState(false);
+  const [customApiUrl, setCustomApiUrl] = useState('');
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [showCustomApiKey, setShowCustomApiKey] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,6 +43,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
 
     const savedYunwuLlmKey = localStorage.getItem('YUNWU_API_KEY');
     if (savedYunwuLlmKey) setYunwuLlmApiKey(savedYunwuLlmKey);
+
+    const savedCustomApiUrl = localStorage.getItem('CUSTOM_API_URL');
+    if (savedCustomApiUrl) setCustomApiUrl(savedCustomApiUrl);
+
+    const savedCustomApiKey = localStorage.getItem('CUSTOM_API_KEY');
+    if (savedCustomApiKey) setCustomApiKey(savedCustomApiKey);
   }, [isOpen]);
 
   const validateApiKey = async (key: string): Promise<boolean> => {
@@ -52,9 +61,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
     setValidationStatus('idle');
 
     try {
-      const url = llmProvider === 'gemini'
-        ? `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
-        : `https://yunwu.ai/v1beta/models?key=${key}`;
+      let url: string;
+      if (llmProvider === 'gemini') {
+        url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+      } else if (llmProvider === 'yunwu') {
+        url = `https://yunwu.ai/v1beta/models?key=${key}`;
+      } else {
+        const baseUrl = customApiUrl.trim().replace(/\/+$/, '');
+        if (!baseUrl) {
+          setErrorMessage('请先输入 API 地址');
+          return false;
+        }
+        url = `${baseUrl}/v1beta/models?key=${key}`;
+      }
 
       const response = await fetch(url);
 
@@ -78,11 +97,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
   };
 
   const handleSaveApiKey = async () => {
-    const trimmedKey = llmProvider === 'gemini' ? apiKey.trim() : yunwuLlmApiKey.trim();
+    let trimmedKey: string;
+    if (llmProvider === 'gemini') {
+      trimmedKey = apiKey.trim();
+    } else if (llmProvider === 'yunwu') {
+      trimmedKey = yunwuLlmApiKey.trim();
+    } else {
+      trimmedKey = customApiKey.trim();
+    }
 
     if (!trimmedKey) {
       setValidationStatus('error');
       setErrorMessage('请输入 API Key');
+      return;
+    }
+
+    if (llmProvider === 'custom' && !customApiUrl.trim()) {
+      setValidationStatus('error');
+      setErrorMessage('请输入 API 地址');
       return;
     }
 
@@ -92,8 +124,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
       localStorage.setItem('LLM_API_PROVIDER', llmProvider);
       if (llmProvider === 'gemini') {
         localStorage.setItem('GEMINI_API_KEY', trimmedKey);
-      } else {
+      } else if (llmProvider === 'yunwu') {
         localStorage.setItem('YUNWU_API_KEY', trimmedKey);
+      } else {
+        localStorage.setItem('CUSTOM_API_URL', customApiUrl.trim().replace(/\/+$/, ''));
+        localStorage.setItem('CUSTOM_API_KEY', trimmedKey);
       }
       window.dispatchEvent(new CustomEvent('llmProviderUpdated'));
       setTimeout(onClose, 1000);
@@ -103,16 +138,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
   const handleClearApiKey = () => {
     if (llmProvider === 'gemini') {
       setApiKey('');
-    } else {
+    } else if (llmProvider === 'yunwu') {
       setYunwuLlmApiKey('');
+    } else {
+      setCustomApiUrl('');
+      setCustomApiKey('');
     }
     setValidationStatus('idle');
     setErrorMessage('');
 
     if (llmProvider === 'gemini') {
       localStorage.removeItem('GEMINI_API_KEY');
-    } else {
+    } else if (llmProvider === 'yunwu') {
       localStorage.removeItem('YUNWU_API_KEY');
+    } else {
+      localStorage.removeItem('CUSTOM_API_URL');
+      localStorage.removeItem('CUSTOM_API_KEY');
     }
     window.dispatchEvent(new CustomEvent('llmProviderUpdated'));
   };
@@ -185,7 +226,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
                   <span className="text-sm font-medium text-slate-300">API 提供商</span>
                 </label>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <button
                     onClick={() => {
                       setLlmProvider('gemini');
@@ -217,6 +258,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
                     <div className="font-bold text-white">云雾 API</div>
                     <div className="text-xs text-slate-400 mt-1">第三方接口</div>
                   </button>
+
+                  <button
+                    onClick={() => {
+                      setLlmProvider('custom');
+                      setValidationStatus('idle');
+                      setErrorMessage('');
+                    }}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      llmProvider === 'custom'
+                        ? 'border-orange-500 bg-orange-500/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="font-bold text-white">自定义 API</div>
+                    <div className="text-xs text-slate-400 mt-1">自定义第三方接口</div>
+                  </button>
                 </div>
               </div>
 
@@ -224,7 +281,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
               <div className="space-y-4">
                 <label className="block">
                   <span className="text-sm font-medium text-slate-300">
-                    {llmProvider === 'gemini' ? 'Gemini API Key' : '云雾 API Key'}
+                    {llmProvider === 'gemini' ? 'Gemini API Key' : llmProvider === 'yunwu' ? '云雾 API Key' : '自定义 API 配置'}
                   </span>
                   <span className="text-xs text-slate-500 ml-2">必填</span>
                 </label>
@@ -287,6 +344,54 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
                   </>
                 )}
 
+                {llmProvider === 'custom' && (
+                  <>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1.5">API 地址</label>
+                        <input
+                          type="text"
+                          value={customApiUrl}
+                          onChange={(e) => {
+                            setCustomApiUrl(e.target.value);
+                            setValidationStatus('idle');
+                            setErrorMessage('');
+                          }}
+                          placeholder="https://your-api.com"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50 focus:bg-white/10 transition-all font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1.5">API Key</label>
+                        <div className="relative">
+                          <input
+                            type={showCustomApiKey ? 'text' : 'password'}
+                            value={customApiKey}
+                            onChange={(e) => {
+                              setCustomApiKey(e.target.value);
+                              setValidationStatus('idle');
+                              setErrorMessage('');
+                            }}
+                            placeholder="输入 API Key"
+                            className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50 focus:bg-white/10 transition-all font-mono text-sm"
+                          />
+                          <button
+                            onClick={() => setShowCustomApiKey(!showCustomApiKey)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white transition-colors"
+                            type="button"
+                          >
+                            {showCustomApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-400 space-y-1">
+                      <p>• 支持任何兼容 Gemini REST API 格式的第三方服务</p>
+                      <p>• API 地址和 Key 将安全地存储在您的浏览器本地,不会上传到任何服务器</p>
+                    </div>
+                  </>
+                )}
+
                 {validationStatus === 'success' && (
                   <div className="flex items-center gap-2 text-emerald-400 text-sm">
                     <CheckCircle size={16} />
@@ -332,7 +437,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
             <button
               onClick={handleClearApiKey}
               className="px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
-              disabled={!apiKey}
+              disabled={
+                (llmProvider === 'gemini' && !apiKey) ||
+                (llmProvider === 'yunwu' && !yunwuLlmApiKey) ||
+                (llmProvider === 'custom' && !customApiUrl && !customApiKey)
+              }
             >
               清除
             </button>
@@ -346,7 +455,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
               </button>
               <button
                 onClick={handleSaveApiKey}
-                disabled={isValidating || (!apiKey.trim() && llmProvider === 'gemini') || (!yunwuLlmApiKey.trim() && llmProvider === 'yunwu')}
+                disabled={isValidating || (!apiKey.trim() && llmProvider === 'gemini') || (!yunwuLlmApiKey.trim() && llmProvider === 'yunwu') || ((!customApiUrl.trim() || !customApiKey.trim()) && llmProvider === 'custom')}
                 className="px-6 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 rounded-xl shadow-lg hover:shadow-cyan-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isValidating ? (

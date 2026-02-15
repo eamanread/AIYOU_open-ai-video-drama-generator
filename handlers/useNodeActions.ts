@@ -168,6 +168,21 @@ export function useNodeActions(params: UseNodeActionsParams) {
 
       return { style, genre, setting };
   };
+
+  // Helper to map visual style enum to descriptive prompt string
+  const getVisualStylePrompt = (style: string): string => {
+      switch (style) {
+          case '3D':
+              return 'Xianxia 3D animation character, semi-realistic style, Xianxia animation aesthetics, high precision 3D modeling, PBR shading with soft translucency, subsurface scattering, ambient occlusion, delicate and smooth skin texture, flowing fabric clothing, individual hair strands, neutral studio lighting, clear focused gaze, natural demeanor';
+          case 'REAL':
+              return 'Professional portrait photography, photorealistic human, cinematic photography, professional headshot, DSLR quality, 85mm lens, sharp focus, realistic skin texture, visible pores, natural skin imperfections, subsurface scattering, natural lighting, studio portrait lighting, softbox lighting, rim light, golden hour';
+          case 'ANIME':
+              return 'Anime character, anime style, 2D anime art, manga illustration style, clean linework, crisp outlines, manga art style, detailed illustration, soft lighting, rim light, vibrant colors, cel shading lighting, flat shading';
+          default:
+              return 'Cinematic, high quality, consistent style';
+      }
+  };
+
   // --- Main Action Handler ---
   const handleNodeAction = useCallback(async (id: string, promptOverride?: string) => {
       const node = nodesRef.current.find(n => n.id === id);
@@ -306,12 +321,17 @@ export function useNodeActions(params: UseNodeActionsParams) {
                   setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.WORKING, data: { ...n.data, progress: '正在优化提示词...' } } : n));
 
                   try {
+                    // Get upstream visual style
+                    const { style: styleType } = getUpstreamStyleContext(node, nodesRef.current);
+                    const stylePrompt = getVisualStylePrompt(styleType);
+
                     // Use AI to generate enhanced prompt with Sora2 builder (includes black screen)
                     const { promptBuilderFactory } = await import('../services/promptBuilders');
                     const builder = promptBuilderFactory.getByNodeType(NodeType.SORA_VIDEO_GENERATOR);
                     const newPrompt = await builder.build(taskGroup.splitShots, {
                       includeBlackScreen: true,
-                      blackScreenDuration: 0.5
+                      blackScreenDuration: 0.5,
+                      visualStyle: stylePrompt
                     });
 
                     // Update the task group's prompt
@@ -470,6 +490,14 @@ export function useNodeActions(params: UseNodeActionsParams) {
                         },
                         { nodeId: id, nodeType: node.type }
                     );
+
+                    console.log('[SORA] generateSoraVideo 返回结果:', {
+                        status: result.status,
+                        taskId: result.taskId,
+                        videoUrl: result.videoUrl,
+                        hasVideoUrl: !!result.videoUrl,
+                        _rawData: result._rawData
+                    });
 
                     if (result.status === 'completed') {
                         // 不保存到IndexedDB，直接使用 Sora URL
@@ -715,8 +743,11 @@ export function useNodeActions(params: UseNodeActionsParams) {
                   const newConnections: Connection[] = [];
 
                   // 使用 for...of 循环以支持 await
-                  for (const [index, result] of results.entries()) {
-                      const taskGroup = taskGroupsToGenerate[index];
+                  // results 是 Map<taskGroupId, SoraVideoResult>，需要用 taskGroupId 查找对应的 taskGroup
+                  let childIndex = 0;
+                  for (const [taskGroupId, result] of results.entries()) {
+                      const taskGroup = taskGroupsToGenerate.find(tg => tg.id === taskGroupId);
+                      if (!taskGroup) continue;
                       if (result.status === 'completed' && result.videoUrl) {
                           // 不保存到IndexedDB，直接使用 Sora URL
                           saveVideoToDatabase(result.videoUrl, result.taskId, taskGroup.taskNumber, taskGroup.soraPrompt);
@@ -747,12 +778,12 @@ export function useNodeActions(params: UseNodeActionsParams) {
                           }
 
                           // Create child node
-                          const childNodeId = `n-sora-child-${Date.now()}-${index}`;
+                          const childNodeId = `n-sora-child-${Date.now()}-${childIndex}`;
                           const childNode: AppNode = {
                               id: childNodeId,
                               type: NodeType.SORA_VIDEO_CHILD,
                               x: node.x + (node.width || 420) + 50,
-                              y: node.y + (index * 150),
+                              y: node.y + (childIndex * 150),
                               title: `任务组 ${taskGroup.taskNumber}`,
                               status: NodeStatus.SUCCESS,
                               data: {
@@ -771,6 +802,7 @@ export function useNodeActions(params: UseNodeActionsParams) {
                           };
                           newChildNodes.push(childNode);
                           newConnections.push({ from: node.id, to: childNodeId });
+                          childIndex++;
                       }
                   }
 
@@ -871,7 +903,7 @@ export function useNodeActions(params: UseNodeActionsParams) {
                       );
 
                       const finalTaskGroups = updatedTaskGroups.map((tg, index) => {
-                          const result = results.find(r => r.taskGroupId === tg.id);
+                          const result = results.get(tg.id);
                           if (result) {
                               // 保留实际的进度值
                               const finalProgress = result.status === 'completed' ? 100 : result.progress;
@@ -911,11 +943,14 @@ export function useNodeActions(params: UseNodeActionsParams) {
                       const newConnections: Connection[] = [];
 
                       // 使用 for...of 循环以支持 await
-                      for (const [index, result] of results.entries()) {
+                      // results 是 Map<taskGroupId, SoraVideoResult>
+                      let childIndex = 0;
+                      for (const [taskGroupId, result] of results.entries()) {
                           // 只有当状态完成且有有效videoUrl时才创建子节点
                           if (result.status === 'completed' && result.videoUrl) {
-                              const childNodeId = `n-sora-child-${Date.now()}-${index}`;
-                              const taskGroup = updatedTaskGroups[index];
+                              const childNodeId = `n-sora-child-${Date.now()}-${childIndex}`;
+                              const taskGroup = updatedTaskGroups.find(tg => tg.id === taskGroupId);
+                              if (!taskGroup) continue;
 
                               // 不保存到IndexedDB，直接使用 Sora URL
                               saveVideoToDatabase(result.videoUrl, result.taskId, taskGroup.taskNumber, taskGroup.soraPrompt);
@@ -924,7 +959,7 @@ export function useNodeActions(params: UseNodeActionsParams) {
                                   id: childNodeId,
                                   type: NodeType.SORA_VIDEO_CHILD,
                                   x: node.x + (node.width || 420) + 50,
-                                  y: node.y + (index * 150),
+                                  y: node.y + (childIndex * 150),
                                   title: `任务组 ${taskGroup.taskNumber}`,
                                   status: NodeStatus.SUCCESS,
                                   data: {
@@ -949,6 +984,7 @@ export function useNodeActions(params: UseNodeActionsParams) {
 
                               newChildNodes.push(childNode);
                               newConnections.push(newConnection);
+                              childIndex++;
                           }
                       }
 
@@ -1160,13 +1196,20 @@ export function useNodeActions(params: UseNodeActionsParams) {
                   const availableShots = node.data.availableShots || [];
                   const selectedShots = availableShots.filter((s: any) => selectedShotIds.includes(s.id));
 
+                  // Get upstream visual style
+                  const { style: styleType, genre, setting } = getUpstreamStyleContext(node, nodesRef.current);
+                  const stylePrompt = getVisualStylePrompt(styleType);
+
                   // Use Generic prompt builder for storyboard videos (no black screen)
                   const { promptBuilderFactory } = await import('../services/promptBuilders');
                   const builder = promptBuilderFactory.getByNodeType(NodeType.STORYBOARD_VIDEO_GENERATOR);
 
-
                   // Generate prompt using Generic format (no black screen for storyboard videos)
-                  const generatedPrompt = await builder.build(selectedShots);
+                  const generatedPrompt = await builder.build(selectedShots, {
+                      visualStyle: stylePrompt,
+                      context: genre || setting ? `类型：${genre}，背景：${setting}` : undefined,
+                      preserveDialogue: true
+                  });
 
 
                   handleNodeUpdate(id, {
@@ -1951,7 +1994,8 @@ export function useNodeActions(params: UseNodeActionsParams) {
                           status: NodeStatus.IDLE,
                           data: {
                               prompt: formattedContent,
-                              model: 'gemini-3-pro-preview'
+                              model: 'gemini-3-pro-preview',
+                              isEpisodeChild: true,
                           },
                           inputs: [node.id]
                       });
@@ -1960,7 +2004,7 @@ export function useNodeActions(params: UseNodeActionsParams) {
 
                   saveHistory();
                   setNodes(prev => [...prev, ...newNodes]);
-                  setConnections(prev => [...prev, newConnections]);
+                  setConnections(prev => [...prev, ...newConnections]);
                   
                   handleNodeUpdate(id, { generatedEpisodes: episodes });
               }
@@ -2389,31 +2433,46 @@ export function useNodeActions(params: UseNodeActionsParams) {
               // Extract character reference images from upstream CHARACTER_NODE (for all cases)
               const characterReferenceImages: string[] = [];
               const characterNames: string[] = [];  // Track character names for prompt
+              const characterNameMap = new Map<string, string>();  // Chinese name → English code (Character A, B, C...)
               const characterNode = inputs.find(n => n.type === NodeType.CHARACTER_NODE);
 
               if (characterNode?.data.generatedCharacters) {
                   const characters = characterNode.data.generatedCharacters as CharacterProfile[];
-                  characters.forEach(char => {
+                  const charLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                  characters.forEach((char, idx) => {
                       if (char.threeViewSheet) {
                           characterReferenceImages.push(char.threeViewSheet);
                       } else if (char.expressionSheet) {
                           characterReferenceImages.push(char.expressionSheet);
                       }
-                      // Collect character names
+                      // Build Chinese name → English code mapping
                       if (char.name) {
-                          characterNames.push(char.name);
+                          const code = `Character ${charLabels[idx] || idx + 1}`;
+                          characterNameMap.set(char.name, code);
+                          characterNames.push(code);
                       }
                   });
 
               }
 
+              // Helper: Replace Chinese character names with English codes in text
+              // Preserves Chinese text inside quotes (e.g. signboard text like "天下第一")
+              const sanitizeChineseNames = (text: string): string => {
+                  let result = text;
+                  for (const [cnName, enCode] of characterNameMap) {
+                      // Replace Chinese names outside of quoted strings
+                      result = result.replace(new RegExp(cnName, 'g'), enCode);
+                  }
+                  return result;
+              };
+
               // Helper: Build detailed shot prompt with camera language
               const buildDetailedShotPrompt = (shot: any, index: number, globalIndex: number): string => {
                   const parts: string[] = [];
 
-                  // 1. Visual description (most important)
+                  // 1. Visual description (most important) — sanitize Chinese names
                   if (shot.visualDescription) {
-                      parts.push(shot.visualDescription);
+                      parts.push(sanitizeChineseNames(shot.visualDescription));
                   }
 
                   // 2. Shot size mapping (景别)
@@ -2446,13 +2505,10 @@ export function useNodeActions(params: UseNodeActionsParams) {
                       parts.push(cameraAngleMap[shot.cameraAngle]);
                   }
 
-                  // 4. Scene context
+                  // 4. Scene context — sanitize Chinese names
                   if (shot.scene) {
-                      parts.push(`environment: ${shot.scene}`);
+                      parts.push(`environment: ${sanitizeChineseNames(shot.scene)}`);
                   }
-
-                  // 5. Add unique identifier to prevent duplication
-                  parts.push(`[Unique Panel ID: ${globalIndex + 1}]`);
 
                   return parts.join('. ');
               };
@@ -2477,13 +2533,12 @@ export function useNodeActions(params: UseNodeActionsParams) {
                   // IMPORTANT: Use format that won't be rendered as text in images
                   const panelDescriptions = pageShots.map((shot, idx) => {
                       const globalIndex = startIdx + idx;
+                      const panelOrientationText = panelOrientation === '16:9' ? '16:9 landscape (horizontal)' : '9:16 portrait (vertical)';
                       if (shot.isEmpty) {
-                          return `[Panel ${idx + 1} is BLANK - Empty panel at end of storyboard]`;
+                          return `---\n${panelOrientationText} - (empty panel, leave blank)`;
                       }
                       const shotPrompt = buildDetailedShotPrompt(shot, idx, globalIndex);
-                      // 🔧 优化：明确面板的方向和比例
-                      const panelOrientationText = panelOrientation === '16:9' ? '16:9 landscape (horizontal)' : '9:16 portrait (vertical)';
-                      return `[Panel ${idx + 1}]: ${panelOrientationText} - ${shotPrompt}`;
+                      return `---\n${panelOrientationText} - ${shotPrompt}`;
                   }).join('\n\n');
 
                   // Extract unique scenes and build scene consistency guide
@@ -2501,18 +2556,18 @@ export function useNodeActions(params: UseNodeActionsParams) {
                       }
                   });
 
-                  // Build scene consistency section
+                  // Build scene consistency section — use Location N instead of Chinese scene names
                   let sceneConsistencySection = '';
                   if (sceneGroups.size > 0) {
+                      let locationIndex = 1;
                       const sceneEntries = Array.from(sceneGroups.entries()).map(([sceneName, data]) => {
                           const panelList = data.indices.join(', ');
-                          const combinedDesc = data.descriptions.join(' ');
-                          // Truncate if too long
+                          const combinedDesc = sanitizeChineseNames(data.descriptions.join(' '));
                           const descSummary = combinedDesc.length > 150
                               ? combinedDesc.substring(0, 150) + '...'
                               : combinedDesc;
 
-                          return `- Scene "${sceneName}" (Panels ${panelList}): ${descSummary}`;
+                          return `- Location ${locationIndex++} (Panels ${panelList}): ${descSummary}`;
                       }).join('\n');
 
                       sceneConsistencySection = `
@@ -2541,8 +2596,6 @@ This ensures visual continuity - multiple panels showing the same scene should l
 
                   const gridPrompt = `
 Create a professional cinematic storyboard ${gridLayout} grid layout at ${resolutionConfig.name} resolution.
-
-IMPORTANT: The panel descriptions below use [Panel X] format for organization ONLY. DO NOT render these labels, numbers, or brackets in the actual image. They are purely for your reference in organizing the layout.
 
 OVERALL IMAGE SPECS:
 - Output Aspect Ratio: ${imageAspectRatio} (${orientation})
@@ -2584,7 +2637,7 @@ ${stylePrefix ? `ART STYLE: ${stylePrefix}\n` : ''}
 ${characterReferenceImages.length > 0 ? `CHARACTER CONSISTENCY (CRITICAL):
 ⚠️ MANDATORY: You MUST use the provided character reference images as the ONLY source of truth for character appearance.
 
-Characters in this storyboard: ${characterNames.length > 0 ? characterNames.join(', ') : 'See reference images'}
+${characterNames.map((code, i) => `${code} = reference image ${i + 1}`).join('\n')}
 Number of character references provided: ${characterReferenceImages.length}
 
 REQUIREMENTS:
@@ -2603,7 +2656,7 @@ This is NON-NEGOTIABLE: Character consistency across all panels is mandatory.
 
 ${sceneConsistencySection}
 
-PANEL BREAKDOWN (each panel MUST be visually distinct):
+PANEL BREAKDOWN (each panel MUST be visually distinct, separated by ---):
 ${panelDescriptions}
 
 COMPOSITION REQUIREMENTS:
@@ -2613,6 +2666,11 @@ COMPOSITION REQUIREMENTS:
 - Maintain narrative flow across the ${gridLayout} grid
 - Professional color grading throughout
 - Environmental details and props clearly visible
+
+ABSOLUTE RULE - NO TEXT IN IMAGE:
+This is the highest priority rule. The generated image must contain ZERO text, ZERO letters, ZERO numbers, ZERO labels, ZERO captions, ZERO speech bubbles, ZERO watermarks, ZERO panel numbers, ZERO typography of any kind.
+The ONLY exception: if a panel description explicitly mentions text on a physical object in the scene (e.g. a signboard, book cover, or banner), that specific in-scene text may be rendered as part of the environment.
+Everything else must be purely visual with no text whatsoever.
 `.trim();
 
 
