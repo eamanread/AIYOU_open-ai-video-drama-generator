@@ -37,14 +37,22 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Run tests
+        run: pnpm test
+
       - name: Build Tauri app
         run: pnpm tauri build --verbose 2>&1
 
-      - name: List build output
-        if: always()
+      - name: Smoke test - verify installer exists
+        shell: pwsh
         run: |
-          dir src-tauri\target\release\bundle\ /s /b 2>nul || echo "no bundle output"
-        shell: cmd
+          $exes = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+          if (-not $exes) { Write-Error "No .exe found in nsis bundle"; exit 1 }
+          foreach ($f in $exes) {
+            $sizeMB = [math]::Round($f.Length / 1MB, 2)
+            Write-Host "Found: $($f.Name) ($sizeMB MB)"
+            if ($f.Length -lt 1MB) { Write-Error "Installer too small: $sizeMB MB"; exit 1 }
+          }
 
       - name: Upload Windows installer
         if: success()

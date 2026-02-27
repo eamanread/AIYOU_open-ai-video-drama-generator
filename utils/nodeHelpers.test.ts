@@ -59,24 +59,25 @@ describe('getApproxNodeHeight', () => {
 
   it('returns base height for type when no explicit height', () => {
     const node = makeNode({ height: undefined });
-    expect(getApproxNodeHeight(node)).toBe(320); // PROMPT_INPUT base
+    expect(getApproxNodeHeight(node)).toBe(360); // PROMPT_INPUT → DEFAULT_FIXED_HEIGHT
   });
 
-  it('adds extra height for storyboard shots', () => {
+  it('returns fixed height for storyboard generator type', () => {
     const node = makeNode({
       height: undefined,
+      type: NodeType.STORYBOARD_GENERATOR,
       data: { storyboardShots: [{ id: '1' }, { id: '2' }] },
     });
-    expect(getApproxNodeHeight(node)).toBe(320 + 2 * 40);
+    expect(getApproxNodeHeight(node)).toBe(500); // STORYBOARD_NODE_HEIGHT
   });
 
-  it('adds extra height for generated characters', () => {
+  it('returns fixed height for character node type', () => {
     const node = makeNode({
       height: undefined,
       type: NodeType.CHARACTER_NODE,
       data: { generatedCharacters: [{ name: 'A' }, { name: 'B' }] },
     });
-    expect(getApproxNodeHeight(node)).toBe(520 + 2 * 60);
+    expect(getApproxNodeHeight(node)).toBe(600); // CHARACTER_NODE_HEIGHT
   });
 });
 

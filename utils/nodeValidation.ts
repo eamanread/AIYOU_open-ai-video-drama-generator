@@ -321,7 +321,86 @@ export const NODE_DEPENDENCY_RULES: Record<NodeType, {
     minInputs: 1,
     maxInputs: -1,  // 不限制输入数量
     description: '视频编辑器,拼接和编辑多个视频'
-  }
+  },
+
+  // ── Phase 1 新增节点 ──
+
+  // 剧本解析 - 接收文本输入,输出结构化剧本数据
+  [NodeType.SCRIPT_PARSER]: {
+    allowedInputs: [
+      NodeType.PROMPT_INPUT,
+      NodeType.SCRIPT_PLANNER,
+      NodeType.SCRIPT_EPISODE,
+    ],
+    allowedOutputs: [
+      NodeType.STYLE_PRESET,
+      NodeType.CHARACTER_NODE,
+      NodeType.SCENE_ASSET,
+      NodeType.PROP_ASSET,
+      NodeType.STORYBOARD_GENERATOR,
+    ],
+    minInputs: 0,
+    maxInputs: 3,
+    description: '解析剧本文本为结构化 JSON'
+  },
+
+  // 场景资产 - 生成场景参考图
+  [NodeType.SCENE_ASSET]: {
+    allowedInputs: [
+      NodeType.SCRIPT_PARSER,
+      NodeType.STYLE_PRESET,
+    ],
+    allowedOutputs: [
+      NodeType.STORYBOARD_GENERATOR,
+      NodeType.IMAGE_GENERATOR,
+    ],
+    minInputs: 1,
+    maxInputs: 3,
+    description: '生成六格场景参考图'
+  },
+
+  // 道具资产 - 生成道具三视图
+  [NodeType.PROP_ASSET]: {
+    allowedInputs: [
+      NodeType.SCRIPT_PARSER,
+      NodeType.STYLE_PRESET,
+    ],
+    allowedOutputs: [
+      NodeType.STORYBOARD_GENERATOR,
+      NodeType.IMAGE_GENERATOR,
+    ],
+    minInputs: 1,
+    maxInputs: 3,
+    description: '生成道具三视图参考'
+  },
+
+  // 视频提示词生成 - 分镜转视频指令
+  [NodeType.VIDEO_PROMPT_GENERATOR]: {
+    allowedInputs: [
+      NodeType.STORYBOARD_GENERATOR,
+      NodeType.SCRIPT_PARSER,
+      NodeType.STYLE_PRESET,
+    ],
+    allowedOutputs: [
+      NodeType.PLATFORM_SUBMIT,
+      NodeType.VIDEO_GENERATOR,
+    ],
+    minInputs: 1,
+    maxInputs: 5,
+    description: '将分镜数据翻译为视频生成指令'
+  },
+
+  // 平台提交 - 提交到视频生成平台
+  [NodeType.PLATFORM_SUBMIT]: {
+    allowedInputs: [
+      NodeType.VIDEO_PROMPT_GENERATOR,
+      NodeType.STORYBOARD_GENERATOR,
+    ],
+    allowedOutputs: [],
+    minInputs: 1,
+    maxInputs: 10,
+    description: '提交视频生成任务到即梦等平台'
+  },
 };
 
 /**
@@ -345,6 +424,13 @@ export function validateConnection(
   // 1. 检查节点类型是否允许连接
   const fromRules = NODE_DEPENDENCY_RULES[fromNode.type];
   const toRules = NODE_DEPENDENCY_RULES[toNode.type];
+
+  if (!fromRules || !toRules) {
+    return {
+      valid: false,
+      error: `未知节点类型: ${!fromRules ? fromNode.type : toNode.type}`,
+    };
+  }
 
   if (!fromRules.allowedOutputs.includes(toNode.type)) {
     return {
@@ -450,6 +536,12 @@ export function canExecuteNode(
   connections: Connection[]
 ): ValidationResult {
   const rules = NODE_DEPENDENCY_RULES[node.type];
+  if (!rules) {
+    return {
+      valid: false,
+      error: `未知节点类型: ${node.type}`,
+    };
+  }
 
   // 获取当前节点的输入连接数
   const inputCount = connections.filter(c => c.to === node.id).length;
@@ -496,6 +588,15 @@ export function canExecuteNode(
         return {
           valid: false,
           error: '请配置剧本主题'
+        };
+      }
+      break;
+
+    case NodeType.SCRIPT_PARSER:
+      if (!node.data.prompt && inputCount === 0) {
+        return {
+          valid: false,
+          error: '请提供剧本文本或连接一个上游输入节点',
         };
       }
       break;

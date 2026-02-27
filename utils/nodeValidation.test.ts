@@ -158,6 +158,48 @@ describe('canExecuteNode', () => {
     const result = canExecuteNode(node, connections);
     expect(result.valid).toBe(true);
   });
+
+  it('rejects SCRIPT_PARSER without prompt or input', () => {
+    const node = makeNode({
+      id: 'parser',
+      type: NodeType.SCRIPT_PARSER,
+      data: {},
+    });
+    const result = canExecuteNode(node, []);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('剧本文本');
+  });
+
+  it('allows SCRIPT_PARSER with prompt', () => {
+    const node = makeNode({
+      id: 'parser',
+      type: NodeType.SCRIPT_PARSER,
+      data: { prompt: '第一集：男主在雨夜奔跑。' },
+    });
+    const result = canExecuteNode(node, []);
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe('defensive validation', () => {
+  it('returns invalid instead of throwing for unknown node type in canExecuteNode', () => {
+    const node = makeNode({
+      id: 'unknown',
+      type: 'UNKNOWN_NODE_TYPE' as NodeType,
+      data: {},
+    });
+    const result = canExecuteNode(node, []);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('未知节点类型');
+  });
+
+  it('returns invalid instead of throwing for unknown node type in validateConnection', () => {
+    const from = makeNode({ id: 'a', type: 'UNKNOWN_FROM' as NodeType, title: 'Unknown From' });
+    const to = makeNode({ id: 'b', type: NodeType.IMAGE_GENERATOR, title: 'Image' });
+    const result = validateConnection(from, to, []);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('未知节点类型');
+  });
 });
 
 describe('canConnectNodeTypes', () => {
