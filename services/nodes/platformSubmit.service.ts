@@ -83,6 +83,19 @@ export class PlatformSubmitService extends BaseNodeService {
       results.push(...batchResults);
     }
 
+    // 6. 严格模式：任一提交失败则节点失败，避免“部分失败但整体成功”
+    const failed = results.filter((r) => r.status === 'error');
+    if (failed.length > 0) {
+      this.updateNodeData(node.id, { results }, context);
+      const sample = failed
+        .slice(0, 5)
+        .map((r) => `${r.shotId || 'unknown'}: ${r.error || '提交失败'}`)
+        .join(' | ');
+      return this.createErrorResult(
+        `视频平台提交失败：${failed.length}/${results.length} 个镜头失败。${sample}`,
+      );
+    }
+
     return this.createSuccessResult({ results }, { results });
   }
 
