@@ -6,6 +6,7 @@
 
 import { AppNode, NodeType, PortSchema } from '../../types';
 import { llmProviderManager } from '../llmProviders';
+import { getUserDefaultModel } from '../modelConfig';
 import {
   BaseNodeService,
   NodeExecutionContext,
@@ -53,7 +54,7 @@ export class ScriptParserService extends BaseNodeService {
       const llmResponse = await this.callLLM(rawScript, node.data.model, node.id);
 
       // 3. 解析 JSON
-      const structured = this.extractJSON(llmResponse);
+      const structured = this.normalizeStructured(this.extractJSON(llmResponse), rawScript);
 
       // 4. 校验必填字段
       const missing = REQUIRED_KEYS.filter((k) => !structured[k]);
@@ -92,7 +93,7 @@ export class ScriptParserService extends BaseNodeService {
   private async callLLM(script: string, model?: string, nodeId?: string): Promise<string> {
     const response = await llmProviderManager.generateContent(
       script,
-      model || 'gemini-2.0-flash',
+      model || getUserDefaultModel('text'),
       {
         systemInstruction: PARSE_SYSTEM_PROMPT,
       }
@@ -114,5 +115,53 @@ export class ScriptParserService extends BaseNodeService {
     } catch {
       throw new Error(`LLM 返回内容无法解析为 JSON。原始响应片段: ${text.substring(0, 200)}`);
     }
+  }
+
+  /** 标准化 LLM 输出，尽量补齐下游节点需要的最小结构 */
+  private normalizeStructured(parsed: Record<string, any>, fallbackScript: string): Record<string, any> {
+    const safe: Record<string, any> = { ...parsed };
+
+    if (!safe.title || typeof safe.title !== 'string') {
+      safe.title = '未命名剧本';
+    }
+
+    if (!Array.isArray(safe.characters)) {
+      safe.characters = [];
+    }
+
+    const episodes = Array.isArray(safe.episodes) ? safe.episodes : [];
+    safe.episodes = episodes.map((ep: any, idx: number) => {
+      const contentText = typeof ep?.content === 'string' ? ep.content : '';
+      const existingScenes = Array.isArray(ep?.scenes) ? ep.scenes : [];
+
+      if (existingScenes.length > 0) {
+        return {
+          ...ep,
+          scenes: existingScenes.map((scene: any) => ({
+            location: scene?.location || '未知场景',
+            timeOfDay: scene?.timeOfDay || '白天',
+            description: scene?.description || contentText || '剧情推进',
+            dialogue: scene?.dialogue || '',
+            props: Array.isArray(scene?.props) ? scene.props : [],
+          })),
+        };
+      }
+
+      const seed = contentText || fallbackScript || `第${idx + 1}集剧情`;
+      return {
+        ...ep,
+        scenes: [
+          {
+            location: '未知场景',
+            timeOfDay: '白天',
+            description: seed.slice(0, 400),
+            dialogue: '',
+            props: [],
+          },
+        ],
+      };
+    });
+
+    return safe;
   }
 }

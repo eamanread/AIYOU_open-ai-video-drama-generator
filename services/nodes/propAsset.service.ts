@@ -45,7 +45,7 @@ export class PropAssetService extends BaseNodeService {
     // 2. 提取去重道具
     const uniqueProps = this.extractUniqueProps(script);
     if (uniqueProps.length === 0) {
-      return this.createErrorResult('剧本中未找到任何道具');
+      return this.createSuccessResult({ propAssets: [] }, { props: { props: [] } });
     }
 
     // 3. 获取 style-config（可选）

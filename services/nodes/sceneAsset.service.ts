@@ -47,7 +47,11 @@ export class SceneAssetService extends BaseNodeService {
     // 2. 按 location 去重提取场景
     const uniqueScenes = this.extractUniqueScenes(script);
     if (uniqueScenes.length === 0) {
-      return this.createErrorResult('剧本中未找到任何场景');
+      const fallback = this.buildFallbackScene(script);
+      if (!fallback) {
+        return this.createSuccessResult({ sceneAssets: [] }, { scenes: { scenes: [] } });
+      }
+      uniqueScenes.push(fallback);
     }
 
     // 3. 获取 style-config（可选）
@@ -91,6 +95,17 @@ export class SceneAssetService extends BaseNodeService {
       }
     }
     return result;
+  }
+
+  private buildFallbackScene(script: StructuredScriptInput): ScriptScene | null {
+    const firstEpisode: any = script?.episodes?.[0];
+    const raw = typeof firstEpisode?.content === 'string' ? firstEpisode.content.trim() : '';
+    if (!raw) return null;
+    return {
+      location: '未知场景',
+      timeOfDay: '白天',
+      description: raw.slice(0, 400),
+    };
   }
 
   /** 构建场景生图 prompt（中/英） */

@@ -1197,8 +1197,12 @@ export const generateScriptPlanner = async (
                 .replace(/{Duration}/g, String(config.duration || 1));
 
             // 构建精炼信息参考文本
+            const hasRefinedInfo = typeof refinedInfo === 'string'
+                ? refinedInfo.trim().length > 0
+                : !!refinedInfo && Object.keys(refinedInfo).length > 0;
+
             let refinedReference = '';
-            if (refinedInfo && Object.keys(refinedInfo).length > 0) {
+            if (hasRefinedInfo) {
                 refinedReference = '\n\n【参考信息 - 来自剧目精炼】\n';
                 refinedReference += '以下信息仅作为创作参考，不要完全照搬，而是融入你的创意中：\n\n';
 
@@ -1213,14 +1217,23 @@ export const generateScriptPlanner = async (
                     artStyle: '画风参考'
                 };
 
-                for (const [key, values] of Object.entries(refinedInfo)) {
-                    if (values && values.length > 0) {
-                        const label = fieldLabels[key] || key;
-                        refinedReference += `${label}:\n`;
-                        values.forEach(v => {
-                            refinedReference += `  - ${v}\n`;
-                        });
-                        refinedReference += '\n';
+                if (typeof refinedInfo === 'string') {
+                    refinedReference += `精炼信息参考:\n  - ${refinedInfo}\n\n`;
+                } else {
+                    for (const [key, rawValues] of Object.entries(refinedInfo)) {
+                        const values = Array.isArray(rawValues)
+                            ? rawValues
+                            : (typeof rawValues === 'string' && rawValues.trim().length > 0)
+                                ? [rawValues]
+                                : (rawValues != null ? [String(rawValues)] : []);
+                        if (values.length > 0) {
+                            const label = fieldLabels[key] || key;
+                            refinedReference += `${label}:\n`;
+                            values.forEach(v => {
+                                refinedReference += `  - ${v}\n`;
+                            });
+                            refinedReference += '\n';
+                        }
                     }
                 }
             }
@@ -1251,7 +1264,9 @@ export const generateScriptPlanner = async (
             model: model || getUserDefaultModel('text'),
             prompt: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
             config,
-            hasRefinedInfo: !!refinedInfo && Object.keys(refinedInfo).length > 0
+            hasRefinedInfo: typeof refinedInfo === 'string'
+                ? refinedInfo.trim().length > 0
+                : !!refinedInfo && Object.keys(refinedInfo).length > 0
         },
         { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
@@ -2492,4 +2507,3 @@ ${userInput || '无'}
         { ...context, platform: llmProviderManager.getCurrentProvider().getName() }
     );
 };
-
