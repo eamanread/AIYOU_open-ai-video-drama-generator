@@ -37,23 +37,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Install server dependencies
-        working-directory: server
-        run: pnpm install
-
-      - name: Build server sidecar
-        run: node scripts/build-server.js
-
-      - name: Verify sidecar files
-        run: |
-          dir src-tauri\binaries\ /b
-          echo ---
-          dir src-tauri\binaries\aiyou-server-*.exe /b 2>nul || echo "No .exe sidecar found"
-        shell: cmd
-
-      - name: Build frontend
-        run: pnpm build
-
       - name: Build Tauri app
         run: pnpm tauri build --verbose 2>&1
 
@@ -105,16 +88,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install
-
-      - name: Install server dependencies
-        working-directory: server
-        run: pnpm install
-
-      - name: Build server sidecar
-        run: node scripts/build-server.js
-
-      - name: Build frontend
-        run: pnpm build
 
       - name: Build Tauri app (Universal)
         run: pnpm tauri build --target universal-apple-darwin

@@ -18,16 +18,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "aiyou"
+name = "fcyh"
 version = "0.1.0"
 dependencies = [
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
- "tauri-plugin-shell",
- "tokio",
 ]
 
 [[package]]
