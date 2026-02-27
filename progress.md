@@ -80,3 +80,32 @@
 | 2026-02-27 09:09 | Wave 3: A10 管线进度UI | ✅ pipelineState→store + 节点状态徽标 |
 | 2026-02-27 09:09 | **Wave 3 全部完成** | ✅ 87/87 tests pass |
 | 2026-02-27 09:09 | **v0.2.0 全部完成** | ✅ Phase0+Wave1+Wave2+Wave3 |
+| 2026-02-27 09:50 | v0.3.0 代码审计 + 范围修订 | ✅ B8/B9移除，B3降级，7+1项 |
+| 2026-02-27 09:55 | v0.3.0 task_plan.md 执行波次+依赖图 | ✅ 4波次+8个Agent分配 |
+| 2026-02-27 09:58 | D1: docs/v0.3.0-canvas-design.md | ✅ 7章节，~180行 |
+| 2026-02-27 09:58 | D2: docs/v0.3.0-storage-migration.md | ✅ 7章节，~185行 |
+| 2026-02-27 09:58 | D3: docs/v0.3.0-api-specs.md | ✅ 4模块API规格，~240行 |
+| 2026-02-27 09:58 | D4: docs/v0.3.0-test-plan.md | ✅ 4层测试+CI方案，~170行 |
+| 2026-02-27 09:58 | **v0.3.0 文档门禁全部通过** | ✅ D1-D4就绪，可开始编码 |
+| 2026-02-27 10:06 | B3 Sentry Quick Fix | ✅ 4处取消注释+import+deps移位 |
+| 2026-02-27 10:06 | B5 ImageEditor mock→real | ✅ generateImageWithFallback |
+| 2026-02-27 10:06 | B6 VideoAnalyzer mock→real | ✅ llmProviderManager.generateContent |
+| 2026-02-27 10:06 | B4 Kling Provider mock→real | ✅ JWT+REST API全实现 |
+| 2026-02-27 10:06 | **B3 + Wave 1 全部完成** | ✅ 87/87 tests pass |
+| 2026-02-27 10:12 | B1 CanvasBoard 画布实现 | ✅ ~260行，三层架构+拖拽+连线+缩放+框选 |
+| 2026-02-27 10:12 | B2 FFmpeg.wasm 视频拼接 | ✅ 懒加载WASM+concat管线+进度回调 |
+| 2026-02-27 10:20 | 修复 runtime test mock 缺失 | ✅ geminiServiceWithFallback mock + template_d 数据 |
+| 2026-02-27 10:20 | **Wave 2 全部完成** | ✅ 88/88 tests pass |
+| 2026-02-27 10:35 | B7 IndexedDBStateStorage 适配器 | ✅ zustand StateStorage 接口实现 |
+| 2026-02-27 10:35 | B7 binaryUtils 二进制剥离工具 | ✅ strip/restore + BINARY_KEYS 对齐 |
+| 2026-02-27 10:35 | B7 config/storage.ts 特性开关+迁移 | ✅ Feature Flag + localStorage→IDB 迁移 |
+| 2026-02-27 10:35 | B7 app.store.ts 适配器替换 | ✅ persist→createJSONStorage(IndexedDB) |
+| 2026-02-27 10:35 | B7 storage-migration.test.ts | ✅ 7个测试覆盖 strip/restore/isFileRef |
+| 2026-02-27 10:35 | **Wave 3 (B7) 全部完成** | ✅ 95/95 tests pass |
+| 2026-02-27 10:42 | B10 playwright.config.ts | ✅ Chromium-only + webServer 自启动 |
+| 2026-02-27 10:42 | B10 E2E specs (4文件 15用例) | ✅ smoke/template/canvas/pipeline |
+| 2026-02-27 10:42 | B10 ci.yml 增加 e2e job | ✅ unit→e2e→build 串行门禁 |
+| 2026-02-27 10:42 | B10 build-desktop.yml macOS 测试门禁 | ✅ pnpm test 前置 |
+| 2026-02-27 10:42 | B10 @playwright/test 加入 devDeps | ✅ ^1.52.0 |
+| 2026-02-27 10:42 | **Wave 4 (B10) 全部完成** | ✅ 95/95 vitest pass + 15 E2E specs ready |
+| 2026-02-27 10:42 | **v0.3.0 全部完成** | ✅ B3+B4+B5+B6+B1+B2+B7+B10 |

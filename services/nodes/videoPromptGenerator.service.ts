@@ -59,17 +59,19 @@ export class VideoPromptGeneratorService extends BaseNodeService {
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
     // 1. 获取分镜数据
     const storyboardInput = this.getSingleInput(node, context);
-    const shots: any[] = storyboardInput?.shots ?? [];
+    const allInputs = this.getInputData(node, context);
+    const shots = this.resolveShots(storyboardInput, allInputs);
 
     if (!shots.length) {
       return this.createErrorResult('分镜数据为空，请连接上游分镜节点');
     }
 
     // 2. 获取可选输入
-    const allInputs = this.getInputData(node, context);
-    const style: StyleConfig | undefined = allInputs.find((d: any) => d?.visualStyle || d?.stylePrompt);
-    const chars: any = allInputs.find((d: any) => Array.isArray(d?.characters));
-    const scenes: any = allInputs.find((d: any) => Array.isArray(d?.scenes));
+    const style: StyleConfig | undefined = allInputs.find((d: any) => d?.visualStyle || d?.stylePrompt || d?.style?.visualStyle)?.style || allInputs.find((d: any) => d?.visualStyle || d?.stylePrompt);
+    const chars: any = allInputs.find((d: any) => Array.isArray(d?.characters) || Array.isArray(d?.characters?.characters))
+      || {};
+    const scenes: any = allInputs.find((d: any) => Array.isArray(d?.scenes) || Array.isArray(d?.scenes?.scenes))
+      || {};
 
     try {
       // 3. 逐镜头生成提示词 + 质量检查
@@ -101,6 +103,8 @@ export class VideoPromptGeneratorService extends BaseNodeService {
   /** 组合镜头描述、运镜、角色、场景、画风为完整提示词 */
   private buildShotPrompt(shot: any, style?: StyleConfig, chars?: any, scenes?: any): string {
     const parts: string[] = [];
+    const charList = chars?.characters?.characters || chars?.characters || [];
+    const sceneList = scenes?.scenes?.scenes || scenes?.scenes || [];
 
     // 景别 + 运镜
     if (shot.shotSize) parts.push(shot.shotSize);
@@ -110,16 +114,16 @@ export class VideoPromptGeneratorService extends BaseNodeService {
     if (shot.visualDescription) parts.push(shot.visualDescription);
 
     // 角色引用
-    if (shot.characters?.length && chars?.characters) {
+    if (shot.characters?.length && Array.isArray(charList)) {
       const refs = shot.characters
-        .map((name: string) => chars.characters.find((c: any) => c.name === name)?.appearance)
+        .map((name: string) => charList.find((c: any) => c.name === name)?.appearance)
         .filter(Boolean);
       if (refs.length) parts.push(`角色: ${refs.join('; ')}`);
     }
 
     // 场景引用
-    if (shot.scene && scenes?.scenes) {
-      const sceneRef = scenes.scenes.find((s: any) => s.name === shot.scene || s.location === shot.scene);
+    if (shot.scene && Array.isArray(sceneList)) {
+      const sceneRef = sceneList.find((s: any) => s.name === shot.scene || s.location === shot.scene);
       if (sceneRef?.promptZh) parts.push(`场景: ${sceneRef.promptZh}`);
     }
 
@@ -164,5 +168,25 @@ export class VideoPromptGeneratorService extends BaseNodeService {
     const score = Math.round((passed_count / 8) * 100);
 
     return { passed: score >= 75, score, checks, suggestions: suggestions.length ? suggestions : undefined };
+  }
+
+  private resolveShots(primaryInput: any, allInputs: any[]): any[] {
+    const fromPrimary = this.extractShots(primaryInput);
+    if (fromPrimary.length > 0) return fromPrimary;
+
+    for (const input of allInputs) {
+      const shots = this.extractShots(input);
+      if (shots.length > 0) return shots;
+    }
+    return [];
+  }
+
+  private extractShots(input: any): any[] {
+    if (!input) return [];
+    if (Array.isArray(input)) return input;
+    if (Array.isArray(input.shots)) return input.shots;
+    if (Array.isArray(input.storyboard?.shots)) return input.storyboard.shots;
+    if (Array.isArray(input.prompts?.shots)) return input.prompts.shots;
+    return [];
   }
 }

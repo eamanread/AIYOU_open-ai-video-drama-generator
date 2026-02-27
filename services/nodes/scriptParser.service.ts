@@ -42,7 +42,7 @@ export class ScriptParserService extends BaseNodeService {
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
     // 1. 获取剧本文本：优先上游输入，其次 node.data.prompt
     const upstream = this.getSingleInput(node, context);
-    const rawScript: string | undefined = upstream ?? node.data.prompt;
+    const rawScript = this.resolveRawScript(upstream, node.data.prompt);
 
     if (!rawScript?.trim()) {
       return this.createErrorResult('未提供剧本文本，请连接上游节点或在面板中粘贴剧本');
@@ -67,6 +67,26 @@ export class ScriptParserService extends BaseNodeService {
       const msg = err instanceof Error ? err.message : '剧本解析失败';
       return this.createErrorResult(msg);
     }
+  }
+
+  private resolveRawScript(upstream: any, fallback?: string): string | undefined {
+    if (typeof upstream === 'string') return upstream;
+    if (upstream && typeof upstream === 'object') {
+      if (typeof upstream.prompt === 'string') return upstream.prompt;
+      if (typeof upstream.episodes === 'string') return upstream.episodes;
+      if (Array.isArray(upstream.generatedEpisodes)) {
+        return upstream.generatedEpisodes
+          .map((ep: any) => `${ep.title || ''}\n${ep.content || ''}`.trim())
+          .join('\n\n');
+      }
+      if (upstream.structured) {
+        return JSON.stringify(upstream.structured, null, 2);
+      }
+      if (upstream.title || upstream.episodes || upstream.characters) {
+        return JSON.stringify(upstream, null, 2);
+      }
+    }
+    return fallback;
   }
 
   private async callLLM(script: string, model?: string, nodeId?: string): Promise<string> {

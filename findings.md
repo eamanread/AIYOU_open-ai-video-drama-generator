@@ -118,3 +118,29 @@ Phase 1 全部合入 → Phase 2 才能开工；Phase 2 三线互不依赖
 - 将技能放置在项目路径 `AIYOU_open-ai-video-drama-generator/.agents/skills` 可避免外层目录写权限限制。
 - 新增节点审计脚本可显著降低“选定工作流后才发现节点不齐”的返工概率。
 - 技能已具备完整闭环：需求锁定 → 三方案选择 → 节点缺口方案选择 → 构建 → 自动验证与代码审查 → 询问是否合并上线。
+
+## v0.3.0 代码审计 (2026-02-27)
+
+### 风险矩阵
+
+| 风险 | Agent | 任务 | 原因 |
+|------|-------|------|------|
+| 🔴高 | B1 | CanvasBoard | 1行空壳，从零构建完整画布 |
+| 🔴高 | B7 | 存储层迁移 | LocalStorage→IndexedDB，影响全局数据流 |
+| 🟡中 | B2 | FFmpeg拼接 | UI已有，WASM在Tauri中兼容性未验证 |
+| 🟡中 | B10 | CI+E2E | Playwright未安装，需从零搭建 |
+| 🟢低 | B3 | Sentry | 4处取消注释 + devDeps→deps |
+| 🟢低 | B4 | Kling | 3个mock→REST API |
+| 🟢低 | B5 | ImageEditor | mock→real |
+| 🟢低 | B6 | VideoAnalyzer | mock→real |
+| ⚪无 | B8 | 新手引导 | 组件已完整(86+158行) |
+| ⚪无 | B9 | 执行日志 | apiLogger已完整(437行) |
+
+### 关键发现
+
+1. B8/B9 实际已完成，无需开发
+2. B3 只需4处取消注释 + 移动依赖位置
+3. B1 是唯一从零构建项，ConnectionLayer(259行)+portLayout(129行)可复用
+4. B7 三层存储骨架已就绪(IndexedDB 572行/FileStorage 514行/Metadata 376行)，只需接入store
+5. Playwright 完全缺失，package.json 无此依赖
+6. @sentry/react 在 devDependencies，生产环境不会打包

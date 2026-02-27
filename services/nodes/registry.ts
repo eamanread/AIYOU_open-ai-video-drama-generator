@@ -35,10 +35,19 @@ import { yunwuapiPlatform } from '../videoPlatforms/yunwuapiProvider';
  * 云雾API平台适配器
  * 将 VideoPlatformProvider 适配为 PlatformProvider 接口
  */
+const getYunwuApiKey = (): string => {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem('YUNWU_API_KEY')?.trim() || '';
+};
+
 const yunwuapiPlatformProvider: PlatformProvider = {
   name: 'yunwuapi',
   label: '云雾API',
   async submit(request: PlatformShotRequest) {
+    const apiKey = getYunwuApiKey();
+    if (!apiKey) {
+      throw new Error('YUNWU_API_KEY_NOT_CONFIGURED');
+    }
     const model = (request.model ?? 'veo') as any;
     return yunwuapiPlatform.submitTask(model, {
       prompt: request.prompt,
@@ -48,14 +57,18 @@ const yunwuapiPlatformProvider: PlatformProvider = {
         duration: String(request.duration || 5) as any,
         quality: (request.quality as any) || 'standard',
       },
-    }, '');  // apiKey injected at runtime via context
+    }, apiKey);
   },
   async getStatus(taskId: string) {
-    const result = await yunwuapiPlatform.checkStatus('veo' as any, taskId, '');
+    const apiKey = getYunwuApiKey();
+    if (!apiKey) {
+      throw new Error('YUNWU_API_KEY_NOT_CONFIGURED');
+    }
+    const result = await yunwuapiPlatform.checkStatus('veo' as any, taskId, apiKey);
     return { status: result.status, videoUrl: result.videoUrl };
   },
   async checkAvailability() {
-    return true; // yunwuapi is always available if configured
+    return !!getYunwuApiKey();
   },
 };
 

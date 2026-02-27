@@ -107,11 +107,10 @@ export class CustomProvider implements LLMProvider {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || '自定义 API 内容生成失败');
+      throw new Error(await this.readApiError(response, '自定义 API 内容生成失败'));
     }
 
-    const data = await response.json();
+    const data = await this.readApiJson(response);
 
     const parts = data.candidates?.[0]?.content?.parts || [];
     const contentParts = parts.filter((part: any) => !part.thought);
@@ -193,11 +192,10 @@ export class CustomProvider implements LLMProvider {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error?.message || '自定义 API 图片生成失败');
+          throw new Error(await this.readApiError(response, '自定义 API 图片生成失败'));
         }
 
-        const data = await response.json();
+        const data = await this.readApiJson(response);
 
         const images: string[] = [];
         if (data.candidates && data.candidates[0]) {
@@ -243,9 +241,30 @@ export class CustomProvider implements LLMProvider {
       const response = await fetch(
         `${baseUrl}/v1beta/models?key=${apiKey}`
       );
-      return response.ok;
+      if (!response.ok) return false;
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return false;
+      const data = await response.json().catch(() => null);
+      return !!(data && (Array.isArray(data.models) || data?.data?.models));
     } catch (error) {
       return false;
     }
+  }
+
+  private async readApiError(response: Response, fallback: string): Promise<string> {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return `${fallback}（返回非 JSON，可能是错误的 API 地址）`;
+    }
+    const error = await response.json().catch(() => ({} as any));
+    return error?.error?.message || fallback;
+  }
+
+  private async readApiJson(response: Response): Promise<any> {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('自定义 API 返回非 JSON（可能配置了错误的 API 地址）');
+    }
+    return response.json();
   }
 }

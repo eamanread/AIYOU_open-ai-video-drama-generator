@@ -5,6 +5,7 @@
 
 import { AppNode, NodeType, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
+import { generateImageWithFallback } from '../geminiServiceWithFallback';
 
 export class ImageEditorService extends BaseNodeService {
   readonly nodeType = NodeType.IMAGE_EDITOR;
@@ -56,14 +57,20 @@ export class ImageEditorService extends BaseNodeService {
   }
 
   /**
-   * 占位：后续接入 generateImageWithFallback
+   * 调用图像生成API编辑图片
    */
   private async editImage(
     sourceImage: string,
     prompt: string
   ): Promise<string | undefined> {
-    // TODO: import { generateImageWithFallback } from '../geminiServiceWithFallback';
-    console.log(`[ImageEditor] 待编辑图片, prompt=${prompt.slice(0, 50)}`);
-    return undefined;
+    const editPrompt = `根据以下指令编辑图片: ${prompt}`;
+    const images = await generateImageWithFallback(
+      editPrompt,
+      'imagen-3.0-generate-002',
+      [sourceImage],
+      { aspectRatio: 'auto' },
+      { nodeId: 'image-editor', nodeType: 'IMAGE_EDITOR' }
+    );
+    return images?.[0];
   }
 }

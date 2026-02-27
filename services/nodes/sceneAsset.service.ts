@@ -38,7 +38,8 @@ export class SceneAssetService extends BaseNodeService {
 
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
     // 1. 获取 structured-script
-    const script = this.getSingleInput(node, context) as StructuredScriptInput | null;
+    const raw = this.getSingleInput(node, context) as any;
+    const script = (raw?.structured || raw) as StructuredScriptInput | null;
     if (!script?.episodes?.length) {
       return this.createErrorResult('未获取到有效的结构化剧本数据');
     }

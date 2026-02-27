@@ -36,18 +36,19 @@ export class CharacterNodeService extends BaseNodeService {
   ];
 
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
-    // 1. 获取上游剧本/大纲文本
-    const scriptText = this.getSingleInput(node, context) as string | null;
+    // 1. 获取上游剧本/大纲（兼容 text 与 structured-script）
+    const primaryInput = this.getSingleInput(node, context);
+    const allInputs = this.getInputData(node, context);
+    const { scriptText, structured } = this.normalizeScriptInput(primaryInput, allInputs);
     if (!scriptText) {
       return this.createErrorResult('未获取到有效的剧本/大纲文本');
     }
 
     // 2. 获取可选画风配置
-    const inputs = this.getInputData(node, context);
-    const style = inputs.find((d): d is StyleConfig => d?.visualStyle !== undefined) ?? null;
+    const style = allInputs.find((d): d is StyleConfig => d?.visualStyle !== undefined) ?? null;
 
     // 3. 从文本中提取角色列表
-    const characters = await this.extractCharacters(scriptText);
+    const characters = await this.extractCharacters(scriptText, structured);
     if (characters.length === 0) {
       return this.createErrorResult('剧本中未识别到任何角色');
     }
@@ -62,8 +63,15 @@ export class CharacterNodeService extends BaseNodeService {
     return this.createSuccessResult({ characters }, { characters: { characters } });
   }
 
-  private async extractCharacters(scriptText: string): Promise<CharacterAsset[]> {
-    const names = await extractCharactersFromText(scriptText);
+  private async extractCharacters(scriptText: string, structured?: any): Promise<CharacterAsset[]> {
+    const structuredNames = Array.isArray(structured?.characters)
+      ? structured.characters
+        .map((c: any) => (typeof c === 'string' ? c : c?.name))
+        .filter((n: any) => typeof n === 'string' && n.trim().length > 0)
+      : [];
+    const names = structuredNames.length > 0
+      ? structuredNames
+      : (await extractCharactersFromText(scriptText));
     if (!names?.length) {
       return [];
     }
@@ -95,16 +103,34 @@ export class CharacterNodeService extends BaseNodeService {
     try {
       char.status = 'GENERATING';
       const styleSuffix = _style?.stylePrompt ? `, ${_style.stylePrompt}` : '';
-      const imageBase64 = await generateImageFromText(
+      const images = await generateImageFromText(
         `${char.promptEn}${styleSuffix}`,
         'imagen-3.0-generate-002',
       );
-      if (imageBase64) {
-        char.expressionSheet = imageBase64;
+      const first = Array.isArray(images) ? images[0] : images;
+      if (first) {
+        char.expressionSheet = first;
         char.status = 'SUCCESS';
       }
     } catch {
       char.status = 'FAILED';
     }
+  }
+
+  private normalizeScriptInput(primaryInput: any, allInputs: any[]): { scriptText: string; structured?: any } {
+    const candidates = [primaryInput, ...allInputs];
+    const structured = candidates.find((v: any) => v?.structured)?.structured
+      || candidates.find((v: any) => v?.episodes && v?.characters);
+
+    if (typeof primaryInput === 'string') {
+      return { scriptText: primaryInput, structured };
+    }
+    if (primaryInput?.prompt && typeof primaryInput.prompt === 'string') {
+      return { scriptText: primaryInput.prompt, structured };
+    }
+    if (structured) {
+      return { scriptText: JSON.stringify(structured, null, 2), structured };
+    }
+    return { scriptText: '' };
   }
 }

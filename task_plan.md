@@ -1,70 +1,89 @@
-# AIYOU 架构升级 — 任务计划
+# AIYOU 蜂巢映画 — 任务计划
 
 > 创建时间: 2026-02-27
-> 状态: ✅ 需求分析完成，待确认执行方案
+> v0.1.x: ✅ 架构骨架 (tag: v0.1.2)
+> v0.2.0: ✅ mock→real 全链路接入 (tag: v0.2.0, 87测试)
+> v0.3.0: 🔄 产品化打磨 — 当前阶段
 
-## 阶段 0: 需求理解 ✅
-- [x] 读取 architecture-plan.md，提取核心架构变更
-- [x] 读取 implementation-playbook.md，提取实施步骤
-- [x] 整合为可执行任务清单
-- 详见 findings.md
+## v0.1.x / v0.2.0 历史 ✅
+- 详见 findings.md + progress.md
 
-## 阶段 0.5: 前置准备（技术Spike + 文档）
-- [ ] S1: 验证 IndexedDB 存储方案（Dexie.js）
-- [ ] S2: 验证画布多端口渲染能力
-- [ ] S3: 验证即梦浏览器扩展桥接
-- [ ] S4: 验证同层节点并行执行
-- [ ] 编写 data-contracts.md（P0，开工前必须）
-- [ ] 编写 prompt-templates.md（P0，Phase 2 前必须）
+---
 
-## Phase 1: 地基层（2周）
+## v0.3.0 — 产品化打磨
 
-### Sprint 1（Week 1）— 类型系统 + 基类
-- [x] T1.1 types.ts 重构：新增 Project/AssetLibrary/PortSchema/StyleConfig 等 14 个 interface，Connection 升级 + 旧格式兼容适配
-- [x] T1.2 BaseNodeService 升级：新增 inputSchema/outputSchema 自声明、RetryConfig、waitIfPaused 钩子
-- [x] T1.3 连线兼容性检查：connectionValidator.ts 核心逻辑（UI集成待做）
+### 范围修订（基于代码审计）
 
-### Sprint 2（Week 2）— 引擎 + 存储
-- [x] T1.4 PipelineEngine 核心：拓扑排序 + 同层并行、状态机、暂停/恢复/失败跳过/人工卡点
-- [x] T1.5 PromptTemplate 系统：模板加载器 + {{variable}} 变量填充引擎
-- [x] T1.6 project.store.ts：Project CRUD、共享资产池读写
+原计划 B1-B10 共10项，审计后调整：
 
-### 依赖关系
-T1.1 → T1.2 → T1.4（串行）；T1.1 → T1.3, T1.6（可并行）；T1.5 无强依赖
+| 原编号 | 调整 | 原因 |
+|--------|------|------|
+| B8 新手引导 | ❌ 移除 | WelcomeScreen(86行)+TemplateSelector(158行) 已完整 |
+| B9 执行日志 | ❌ 移除 | apiLogger.ts(437行) 已完整实现 |
+| B3 Sentry | 降级为 Quick Fix | 4处取消注释 + 移动依赖位置，10分钟工作量 |
 
-## Phase 2: 新节点 + 迁移（3周，三线并行）
+实际开发项：B1 + B2 + B4 + B5 + B6 + B7 + B10 = 7项 + B3 quick fix
 
-### 线路 A — 核心新节点
-- [ ] T2.1 SCRIPT_PARSER：剧本解析，输出 structured-script JSON
-- [ ] T2.2 VIDEO_PROMPT_GENERATOR：分镜→视频指令翻译 + Q1-Q8 质检
+### 执行波次与Agent分配
 
-### 线路 B — 资产节点
-- [ ] T2.3 SCENE_ASSET：六格场景参考图生成
-- [ ] T2.4 PROP_ASSET：道具三视图生成
-- [ ] T2.5 STYLE_PRESET 升级：双模式（简单+四段式）+ 多模板
+```
+B3 Quick Fix (5min)          ← 开场热身，4处取消注释
+    ↓
+Wave 1 (并行): B5 + B6 + B4  ← 三个低风险 mock→real，建立信心
+    ↓
+Wave 2 (并行): B1 + B2       ← 两个中高风险 UI 构建
+    ↓
+Wave 3 (串行): B7            ← 高风险存储迁移，需全量回归
+    ↓
+Wave 4 (串行): B10           ← CI + E2E 收尾
+```
 
-### 线路 C — 10 节点迁移（按依赖顺序）
-- [ ] T2.6 SCRIPT_PLANNER → T2.7 SCRIPT_EPISODE → T2.8 CHARACTER_NODE
-- [ ] T2.9 STORYBOARD_GENERATOR → T2.10 STORYBOARD_IMAGE
-- [ ] T2.11 DRAMA_ANALYZER → T2.12 DRAMA_REFINED
-- [ ] T2.13 IMAGE_EDITOR → T2.14 VIDEO_ANALYZER
-- [ ] T2.15 STYLE_PRESET 基础迁移（与 T2.5 合并）
+| Agent | 任务 | 涉及文件 | 前置文档 | 预估复杂度 |
+|-------|------|---------|---------|-----------|
+| B3 | Sentry 取消注释 | ErrorBoundary*.tsx(3文件) + package.json | 无 | ⚪ 5min |
+| B5 | ImageEditor mock→real | imageEditor.service.ts | D3 | 🟢 低 |
+| B6 | VideoAnalyzer mock→real | videoAnalyzer.service.ts | D3 | 🟢 低 |
+| B4 | Kling Provider mock→real | kling.provider.ts | D3 | 🟢 低 |
+| B1 | CanvasBoard 画布实现 | CanvasBoard.tsx + ConnectionLayer.tsx | D1 | 🔴 高 |
+| B2 | FFmpeg 视频拼接 | VideoEditor.tsx | D3 | 🟡 中 |
+| B7 | 存储层 LS→IndexedDB | app.store.ts + storage/*.ts | D2 | 🔴 高 |
+| B10 | Playwright E2E + CI | workflows/*.yml + tests/e2e/ | D4 | 🟡 中 |
 
-### 前置条件
-Phase 1 全部合入 main 后才能开工；三条线路互不依赖，可独立合入
+### 依赖关系图
 
-## Phase 3: 工作流串联 + 平台对接（2周）
-- [ ] T3.1 三套预设工作流模板（剧本→分镜→视频提示词→提交）
-- [ ] T3.2 工作流固化功能（快照 + one_click/step_by_step 执行模式）
-- [ ] T3.3 PLATFORM_SUBMIT + JimengProvider 实现
-- [ ] T3.4 项目管理 UI（项目选择器/切换器）
-- [ ] T3.5 模板选择器 UI + 管线状态面板
+```
+D1 ──→ B1
+D2 ──→ B7
+D3 ──→ B4, B5, B6, B2
+D4 ──→ B10
 
-## Phase 4: 打磨 + 扩展（1周）
-- [ ] T4.1 更多 Provider（Kling/Sora）
-- [ ] T4.2 模板库扩充 + 用户自建模板导入导出
-- [ ] T4.3 边界场景测试 + 10场景长剧本压测
-- [ ] T4.4 性能优化 + 失败恢复测试
+B3 无依赖（立即可做）
+B5/B6/B4 互不依赖（Wave 1 并行）
+B1/B2 互不依赖（Wave 2 并行）
+B7 需 Wave 1+2 完成后单独执行（存储迁移影响全局）
+B10 需 B1-B7 全部完成（E2E 测试覆盖完整功能）
+```
+
+### 交付标准
+
+- B3: `@sentry/react` 在 dependencies，4处 Sentry.captureException 生效
+- B5: ImageEditor 调用 generateImageWithFallback 返回真实图片
+- B6: VideoAnalyzer 调用 Gemini multimodal 返回真实分析
+- B4: Kling Provider POST/GET 真实 REST API
+- B1: 节点可拖拽、连线可绘制、缩放平移、框选
+- B2: FFmpeg.wasm 拼接多片段输出 mp4
+- B7: 刷新/重启后项目数据完整保留
+- B10: Playwright E2E 覆盖 Template C 全路径，CI 双平台绿灯
+- 全量: `pnpm test` 全绿（≥87 tests）
+
+### 前置文档门禁（编码前必须完成）
+
+| 序号 | 文档 | 负责角色 | 阻塞项 |
+|------|------|---------|--------|
+| D1 | `docs/v0.3.0-canvas-design.md` | 前端架构师 | B1 |
+| D2 | `docs/v0.3.0-storage-migration.md` | 存储专家 | B7 |
+| D3 | `docs/v0.3.0-api-specs.md` | 后端工程师 | B4(Kling)+B2(FFmpeg) |
+| D4 | `docs/v0.3.0-test-plan.md` | QA工程师 | B10(Playwright) |
 
 ---
 

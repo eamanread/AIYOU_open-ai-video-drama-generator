@@ -211,11 +211,41 @@ class NodeServiceRegistryClass {
       getInputData: (fromNodeId: string, outputKey?: string) => {
         const sourceNode = nodes.find(n => n.id === fromNodeId);
         if (!sourceNode) return null;
-        if (outputKey) return sourceNode.data[outputKey];
+        if (outputKey) {
+          if ((sourceNode.data as any)[outputKey] !== undefined) {
+            return (sourceNode.data as any)[outputKey];
+          }
+          const outputs = (sourceNode.data as any).__outputs;
+          if (outputs && outputs[outputKey] !== undefined) {
+            return outputs[outputKey];
+          }
+          return null;
+        }
+        const outputs = (sourceNode.data as any).__outputs;
+        if (outputs) {
+          const keys = Object.keys(outputs);
+          if (keys.length === 1) {
+            return outputs[keys[0]];
+          }
+          return outputs;
+        }
         return sourceNode.data;
       },
-      updateNodeStatus: () => {},
-      updateNodeData: () => {},
+      updateNodeStatus: (nodeId: string, status: NodeStatus) => {
+        const idx = nodes.findIndex(n => n.id === nodeId);
+        if (idx >= 0) {
+          nodes[idx] = { ...nodes[idx], status };
+        }
+      },
+      updateNodeData: (nodeId: string, data: any) => {
+        const idx = nodes.findIndex(n => n.id === nodeId);
+        if (idx >= 0) {
+          nodes[idx] = {
+            ...nodes[idx],
+            data: { ...nodes[idx].data, ...data },
+          };
+        }
+      },
     };
 
     const engine = new PipelineEngine(

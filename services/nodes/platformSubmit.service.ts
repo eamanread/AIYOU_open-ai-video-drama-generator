@@ -48,14 +48,14 @@ export class PlatformSubmitService extends BaseNodeService {
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
     // 1. 获取上游视频提示词
     const promptInput = this.getSingleInput(node, context);
-    const shots: any[] = promptInput?.shots ?? [];
+    const shots = this.resolveShots(promptInput, this.getInputData(node, context));
 
     if (!shots.length) {
       return this.createErrorResult('未收到视频提示词，请连接上游 VIDEO_PROMPT_GENERATOR 节点');
     }
 
     // 2. 读取节点配置
-    const providerName: string = (node.data as any).provider ?? 'jimeng';
+    const providerName: string = (node.data as any).provider ?? 'yunwuapi';
     const batchSize: number = (node.data as any).batchSize ?? 1;
 
     // 3. 获取 Provider 并检查可用性
@@ -104,5 +104,23 @@ export class PlatformSubmitService extends BaseNodeService {
     } catch (err) {
       return { shotId: shot.shotId, platform: provider.name, status: 'error', error: err instanceof Error ? err.message : '提交失败' };
     }
+  }
+
+  private resolveShots(primaryInput: any, allInputs: any[]): any[] {
+    const first = this.extractShots(primaryInput);
+    if (first.length > 0) return first;
+    for (const input of allInputs) {
+      const shots = this.extractShots(input);
+      if (shots.length > 0) return shots;
+    }
+    return [];
+  }
+
+  private extractShots(input: any): any[] {
+    if (!input) return [];
+    if (Array.isArray(input)) return input;
+    if (Array.isArray(input.shots)) return input.shots;
+    if (Array.isArray(input.prompts?.shots)) return input.prompts.shots;
+    return [];
   }
 }

@@ -5,6 +5,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertCircle, X } from 'lucide-react';
+import * as Sentry from '@sentry/react';
 
 interface Props {
   nodeId: string;
@@ -43,11 +44,10 @@ export class NodeErrorBoundary extends Component<Props, State> {
       this.props.onError(this.props.nodeId, error);
     }
 
-    // TODO: 发送到 Sentry
-    // Sentry.captureException(error, {
-    //   tags: { component: 'node', nodeId: this.props.nodeId },
-    //   contexts: { react: { componentStack: errorInfo.componentStack } }
-    // });
+    Sentry.captureException(error, {
+      tags: { component: 'node', nodeId: this.props.nodeId },
+      contexts: { react: { componentStack: errorInfo.componentStack } }
+    });
   }
 
   handleDismiss = () => {
@@ -104,11 +104,10 @@ export function useNodeErrorHandler(nodeId: string, nodeTitle?: string) {
   const handleError = (error: Error) => {
     console.error(`节点 ${nodeId} (${nodeTitle}) 执行失败:`, error);
 
-    // TODO: 发送到 Sentry
-    // Sentry.captureException(error, {
-    //   tags: { component: 'node', nodeId },
-    //   extra: { nodeTitle }
-    // });
+    Sentry.captureException(error, {
+      tags: { component: 'node', nodeId },
+      extra: { nodeTitle }
+    });
   };
 
   return { handleError };

@@ -78,6 +78,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = React.memo(({ isOpen,
       const response = await fetch(url);
 
       if (response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          setValidationStatus('error');
+          setErrorMessage('API 地址返回非 JSON（可能填成了前端页面地址）');
+          return false;
+        }
+        const data = await response.json().catch(() => null);
+        if (!data || (!Array.isArray(data.models) && !Array.isArray(data?.data?.models))) {
+          setValidationStatus('error');
+          setErrorMessage('API 响应格式无效，请检查 API 地址和代理配置');
+          return false;
+        }
         setValidationStatus('success');
         setErrorMessage('');
         return true;

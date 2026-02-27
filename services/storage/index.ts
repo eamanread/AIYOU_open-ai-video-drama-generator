@@ -18,6 +18,12 @@ export { supportsFileSystemAccessAPI } from './FileStorageService';
 export * from './PathManager';
 export * from './MetadataManager';
 
+// Zustand persist adapter
+export { IndexedDBStateStorage } from './IndexedDBStateStorage';
+
+// Binary field utilities
+export { BINARY_KEYS, stripNodeBinaryFields, restoreNodeBinaryFields, isFileRef } from './binaryUtils';
+
 /**
  * 获取默认存储服务实例
  */

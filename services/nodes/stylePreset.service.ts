@@ -81,7 +81,8 @@ export class StylePresetNodeService extends BaseNodeService {
   ];
 
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
-    const upstreamText = this.getSingleInput(node, context) as string | null;
+    const input = this.getSingleInput(node, context);
+    const upstreamText = typeof input === 'string' ? input : null;
     const styleConfig = this.buildStyleConfig(node, upstreamText);
 
     this.updateNodeData(node.id, { styleConfig }, context);

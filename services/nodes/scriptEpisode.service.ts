@@ -33,7 +33,10 @@ export class ScriptEpisodeService extends BaseNodeService {
 
   async execute(node: AppNode, context: NodeExecutionContext): Promise<NodeExecutionResult> {
     // 1. 上游大纲
-    const outline = this.getSingleInput(node, context);
+    const outlineInput = this.getSingleInput(node, context);
+    const outline = typeof outlineInput === 'string'
+      ? outlineInput
+      : (outlineInput?.outline || outlineInput?.scriptOutline || '');
     if (!outline) {
       return this.createErrorResult('未获取到剧本大纲，请连接 SCRIPT_PLANNER 节点');
     }
@@ -46,9 +49,7 @@ export class ScriptEpisodeService extends BaseNodeService {
       episodeModificationSuggestion,
     } = node.data;
 
-    if (!selectedChapter) {
-      return this.createErrorResult('请先选择要生成的章节');
-    }
+    const chapter = selectedChapter || this.inferChapter(outline);
 
     // 3. 收集已有分集（连续性上下文）
     const previousEpisodes = context.nodes
@@ -58,7 +59,7 @@ export class ScriptEpisodeService extends BaseNodeService {
     try {
       // 4. 调用 LLM
       const episodes = await this.callLLM(outline, {
-        selectedChapter,
+        selectedChapter: chapter,
         episodeSplitCount,
         scriptVisualStyle,
         episodeModificationSuggestion,
@@ -102,5 +103,10 @@ export class ScriptEpisodeService extends BaseNodeService {
       throw new Error('未生成任何分集，请检查大纲内容');
     }
     return episodes;
+  }
+
+  private inferChapter(outline: string): string {
+    const m = outline.match(/第[0-9一二三四五六七八九十百]+章[^\n]*/);
+    return m?.[0] || '第1章';
   }
 }

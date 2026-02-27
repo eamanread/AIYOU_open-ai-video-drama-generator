@@ -2935,6 +2935,32 @@ Everything else must be purely visual with no text whatsoever.
              const { editImageWithText } = await import('../services/geminiService');
              const res = await editImageWithText(img, finalPrompt, node.data.model);
              handleNodeUpdate(id, { image: res });
+          } else {
+             // Generic node-service fallback for newer node types not handled in legacy branch.
+             const { NodeServiceRegistry } = await import('../services/nodes/registry');
+             if (!NodeServiceRegistry.has(node.type)) {
+                 throw new Error(`未实现的节点类型: ${node.type}`);
+             }
+             const result = await NodeServiceRegistry.executeNode(
+                 node,
+                 nodesRef.current,
+                 connectionsRef.current,
+                 (nodeId, status) => {
+                     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status } : n));
+                 },
+                 (nodeId, data) => {
+                     handleNodeUpdate(nodeId, data);
+                 }
+             );
+             if (!result.success) {
+                 throw new Error(result.error || `${node.type} 执行失败`);
+             }
+             if (result.outputs) {
+                 handleNodeUpdate(id, result.outputs);
+             }
+             if (result.data && typeof result.data === 'object') {
+                 handleNodeUpdate(id, result.data);
+             }
           }
           setNodes(p => p.map(n => n.id === id ? { ...n, status: NodeStatus.SUCCESS } : n));
       } catch (e: any) {

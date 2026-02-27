@@ -51,7 +51,12 @@ export class DramaAnalyzerService extends BaseNodeService {
 
     // 3. 获取剧目名称
     const upstream = this.getSingleInput(node, context);
-    const dramaName: string = upstream ?? node.data.prompt ?? '';
+    const dramaName: string = (
+      (typeof upstream === 'string' ? upstream : undefined)
+      ?? node.data.dramaName
+      ?? node.data.prompt
+      ?? ''
+    );
     if (!dramaName.trim()) {
       return this.createErrorResult('请输入剧目名称');
     }

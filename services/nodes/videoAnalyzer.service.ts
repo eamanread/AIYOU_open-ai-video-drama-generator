@@ -9,6 +9,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { llmProviderManager } from '../llmProviders';
 
 export class VideoAnalyzerService extends BaseNodeService {
   readonly nodeType = NodeType.VIDEO_ANALYZER;
@@ -49,11 +50,23 @@ export class VideoAnalyzerService extends BaseNodeService {
   }
 
   /**
-   * 视频分析占位方法，待接入实际 API
+   * 调用 LLM 多模态 API 分析视频
    */
   private async analyzeVideo(videoUrl: string): Promise<string> {
-    // TODO: integrate actual video analysis API
-    console.log(`[VideoAnalyzer] 待分析视频: ${videoUrl.slice(0, 80)}`);
-    return 'Mock 视频分析结果';
+    const prompt = [
+      '请分析这段视频，从以下维度输出结构化结果：',
+      '1. 场景描述：画面中的主要元素和环境',
+      '2. 情绪基调：整体氛围和情感倾向',
+      '3. 节奏评估：剪辑节奏是快/中/慢',
+      '4. 镜头语言：使用了哪些镜头技法（推拉摇移跟等）',
+      '5. 改进建议：可优化的方向',
+    ].join('\n');
+
+    const result = await llmProviderManager.generateContent(prompt, {
+      mediaUrl: videoUrl,
+      mediaType: 'video/mp4',
+    });
+
+    return result || '视频分析未返回结果';
   }
 }

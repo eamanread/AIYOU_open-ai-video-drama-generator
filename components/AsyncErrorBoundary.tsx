@@ -5,6 +5,7 @@
 
 import React, { Component, ReactNode } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import * as Sentry from '@sentry/react';
 
 interface Props {
   children: ReactNode;
@@ -50,8 +51,7 @@ export class AsyncErrorBoundary extends Component<Props, State> {
         this.props.onError(error);
       }
 
-      // TODO: 发送到 Sentry
-      // Sentry.captureException(error, { tags: { type: 'unhandled_rejection' } });
+      Sentry.captureException(error, { tags: { type: 'unhandled_rejection' } });
     };
 
     window.addEventListener('unhandledrejection', this.handleUnhandledRejection);

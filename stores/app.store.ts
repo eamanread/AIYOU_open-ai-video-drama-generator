@@ -6,14 +6,15 @@
  * - 连接管理
  * - 用户认证
  * - UI 状态管理
- * - LocalStorage 持久化
+ * - IndexedDB 持久化（v0.3.0+，自动从 localStorage 迁移）
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { AppNode, Connection, Workflow, NodeStatus, PipelineState } from '../types';
 import { useProjectStore } from './project.store';
+import { createStorageAdapter, migrateFromLocalStorage } from '../config/storage';
 
 // 用户接口
 export interface User {
@@ -317,9 +318,9 @@ export const useAppStore = create<AppState>()(
       })
     }),
     {
-      name: 'fcyh-storage', // LocalStorage key
+      name: 'fcyh-storage',
+      storage: createJSONStorage(() => createStorageAdapter()),
       partialize: (state) => ({
-        // 只持久化部分状态
         nodes: state.nodes,
         connections: state.connections,
         workflows: state.workflows,

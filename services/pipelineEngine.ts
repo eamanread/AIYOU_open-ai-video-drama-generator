@@ -100,6 +100,16 @@ export class PipelineEngine {
     const result = await service.executeNode(node, { ...this.context, nodeId });
 
     if (result.success) {
+      // Persist outputs for downstream nodes in pipeline mode.
+      if (result.outputs && typeof result.outputs === 'object') {
+        this.context.updateNodeData(nodeId, {
+          ...(result.outputs as any),
+          __outputs: result.outputs,
+        });
+      }
+      if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+        this.context.updateNodeData(nodeId, result.data);
+      }
       this.state.nodeStatuses[nodeId] = 'success';
     } else {
       this.state.nodeStatuses[nodeId] = 'error';

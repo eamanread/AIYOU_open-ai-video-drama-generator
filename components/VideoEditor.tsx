@@ -7,6 +7,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Upload, Play, Pause, Scissors, Download, Trash2, Plus, Film } from 'lucide-react';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 // ==================== 类型定义 ====================
 
@@ -61,6 +63,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
+  const ffmpegRef = useRef<FFmpeg | null>(null);
 
   // ==================== 初始化 ====================
 
@@ -237,27 +240,63 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({
     setProgress(0);
 
     try {
-      // 这里将集成 FFmpeg.wasm 进行视频拼接
-      // 目前先创建一个模拟导出
-      const totalSteps = clips.length;
-      for (let i = 0; i < totalSteps; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setProgress(((i + 1) / totalSteps) * 100);
+      // 1. 初始化 FFmpeg（懒加载，首次调用时加载 WASM）
+      if (!ffmpegRef.current) {
+        const ffmpeg = new FFmpeg();
+        ffmpeg.on('progress', ({ progress: p }) => {
+          setProgress(Math.round(p * 100));
+        });
+        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        ffmpegRef.current = ffmpeg;
       }
 
-      // TODO: 实现 FFmpeg.wasm 拼接
-      // const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-      // const { fetchFile } = await import('@ffmpeg/util');
+      const ffmpeg = ffmpegRef.current;
 
+      if (clips.length === 0) {
+        setIsProcessing(false);
+        return;
+      }
+
+      // 2. 写入每个片段到虚拟文件系统
+      for (let i = 0; i < clips.length; i++) {
+        const video = videos.find(v => v.id === clips[i].sourceId);
+        if (!video?.url) continue;
+        setProgress(Math.round((i / clips.length) * 30)); // 0-30% 写入阶段
+        await ffmpeg.writeFile(`clip_${i}.mp4`, await fetchFile(video.url));
+      }
+
+      // 3. 生成拼接清单
+      const listContent = clips.map((_, i) => `file 'clip_${i}.mp4'`).join('\n');
+      await ffmpeg.writeFile('list.txt', listContent);
+
+      // 4. 执行拼接（-c copy 不重编码，速度快）
+      setProgress(40);
+      await ffmpeg.exec([
+        '-f', 'concat', '-safe', '0',
+        '-i', 'list.txt',
+        '-c', 'copy',
+        'output.mp4'
+      ]);
+
+      // 5. 读取输出并创建 Blob URL
+      setProgress(90);
+      const data = await ffmpeg.readFile('output.mp4');
+      const outputUrl = URL.createObjectURL(
+        new Blob([data], { type: 'video/mp4' })
+      );
+
+      setProgress(100);
       setIsProcessing(false);
 
       if (onExport) {
-        // 临时返回第一个视频的 URL
-        const outputUrl = clips.length > 0 ? videos.find(v => v.id === clips[0].sourceId)?.url || '' : '';
         onExport(outputUrl);
       }
     } catch (error) {
-      console.error('导出失败:', error);
+      console.error('FFmpeg 导出失败:', error);
       setIsProcessing(false);
     }
   };

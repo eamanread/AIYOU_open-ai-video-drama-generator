@@ -12,8 +12,8 @@ function makeNode(
   return { nodeId: id, nodeType, configSnapshot: config, runtimeInputs };
 }
 
-function conn(from: string, to: string): Connection {
-  return { from, to };
+function conn(from: string, to: string, fromPort?: string): Connection {
+  return fromPort ? { from, to, fromPort } : { from, to };
 }
 
 // ── Template A: 一键全自动 ─────────────────────────────────
@@ -26,20 +26,28 @@ const nodesA: FixedNodeSnapshot[] = [
   makeNode('prop_1',       NodeType.PROP_ASSET,          600, 100),
   makeNode('storyboard_1', NodeType.STORYBOARD_GENERATOR,800,   0),
   makeNode('vidprompt_1',  NodeType.VIDEO_PROMPT_GENERATOR,1000, 0),
-  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,     1200,  0),
+  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,     1200,  0, [], { provider: 'yunwuapi' }),
 ];
 
 const connectionsA: Connection[] = [
-  conn('input_1',  'parser_1'),
-  conn('parser_1', 'style_1'),
-  conn('style_1',  'char_1'),
-  conn('style_1',  'scene_1'),
-  conn('style_1',  'prop_1'),
-  conn('char_1',   'storyboard_1'),
-  conn('scene_1',  'storyboard_1'),
-  conn('prop_1',   'storyboard_1'),
-  conn('storyboard_1', 'vidprompt_1'),
-  conn('vidprompt_1',  'submit_1'),
+  conn('input_1',  'parser_1', 'prompt'),
+  conn('input_1',  'style_1', 'prompt'),
+  conn('parser_1', 'char_1', 'structured'),
+  conn('style_1',  'char_1', 'style'),
+  conn('parser_1', 'scene_1', 'structured'),
+  conn('style_1',  'scene_1', 'style'),
+  conn('parser_1', 'prop_1', 'structured'),
+  conn('style_1',  'prop_1', 'style'),
+  conn('parser_1', 'storyboard_1', 'structured'),
+  conn('style_1',  'storyboard_1', 'style'),
+  conn('char_1',   'storyboard_1', 'characters'),
+  conn('scene_1',  'storyboard_1', 'scenes'),
+  conn('prop_1',   'storyboard_1', 'props'),
+  conn('storyboard_1', 'vidprompt_1', 'storyboard'),
+  conn('style_1',      'vidprompt_1', 'style'),
+  conn('char_1',       'vidprompt_1', 'characters'),
+  conn('scene_1',      'vidprompt_1', 'scenes'),
+  conn('vidprompt_1',  'submit_1', 'prompts'),
 ];
 
 const templateA: FixedWorkflow = {
@@ -66,25 +74,33 @@ const nodesB: FixedNodeSnapshot[] = [
   makeNode('prop_1',     NodeType.PROP_ASSET,         1200, 100),
   makeNode('storyboard_1', NodeType.STORYBOARD_GENERATOR, 1400, 0),
   makeNode('vidprompt_1',  NodeType.VIDEO_PROMPT_GENERATOR, 1600, 0),
-  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,   1800,  0),
+  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,   1800,  0, [], { provider: 'yunwuapi' }),
 ];
 
 const allNodeIdsB = nodesB.map(n => n.nodeId);
 
 const connectionsB: Connection[] = [
-  conn('analyzer_1', 'refined_1'),
-  conn('refined_1',  'planner_1'),
-  conn('planner_1',  'episode_1'),
-  conn('episode_1',  'parser_1'),
-  conn('parser_1',   'style_1'),
-  conn('style_1',    'char_1'),
-  conn('style_1',    'scene_1'),
-  conn('style_1',    'prop_1'),
-  conn('char_1',     'storyboard_1'),
-  conn('scene_1',    'storyboard_1'),
-  conn('prop_1',     'storyboard_1'),
-  conn('storyboard_1', 'vidprompt_1'),
-  conn('vidprompt_1',  'submit_1'),
+  conn('analyzer_1', 'refined_1', 'analysis'),
+  conn('refined_1',  'planner_1', 'refined'),
+  conn('planner_1',  'episode_1', 'outline'),
+  conn('episode_1',  'parser_1', 'episodes'),
+  conn('episode_1',  'style_1', 'episodes'),
+  conn('parser_1',   'char_1', 'structured'),
+  conn('style_1',    'char_1', 'style'),
+  conn('parser_1',   'scene_1', 'structured'),
+  conn('style_1',    'scene_1', 'style'),
+  conn('parser_1',   'prop_1', 'structured'),
+  conn('style_1',    'prop_1', 'style'),
+  conn('parser_1',   'storyboard_1', 'structured'),
+  conn('style_1',    'storyboard_1', 'style'),
+  conn('char_1',     'storyboard_1', 'characters'),
+  conn('scene_1',    'storyboard_1', 'scenes'),
+  conn('prop_1',     'storyboard_1', 'props'),
+  conn('storyboard_1', 'vidprompt_1', 'storyboard'),
+  conn('style_1',      'vidprompt_1', 'style'),
+  conn('char_1',       'vidprompt_1', 'characters'),
+  conn('scene_1',      'vidprompt_1', 'scenes'),
+  conn('vidprompt_1',  'submit_1', 'prompts'),
 ];
 
 const templateB: FixedWorkflow = {
@@ -104,14 +120,14 @@ const nodesC: FixedNodeSnapshot[] = [
   makeNode('parser_1',     NodeType.SCRIPT_PARSER,        200, 0),
   makeNode('storyboard_1', NodeType.STORYBOARD_GENERATOR, 400, 0),
   makeNode('vidprompt_1',  NodeType.VIDEO_PROMPT_GENERATOR,600, 0),
-  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,      800, 0),
+  makeNode('submit_1',     NodeType.PLATFORM_SUBMIT,      800, 0, [], { provider: 'yunwuapi' }),
 ];
 
 const connectionsC: Connection[] = [
-  conn('input_1',  'parser_1'),
-  conn('parser_1', 'storyboard_1'),
-  conn('storyboard_1', 'vidprompt_1'),
-  conn('vidprompt_1',  'submit_1'),
+  conn('input_1',  'parser_1', 'prompt'),
+  conn('parser_1', 'storyboard_1', 'structured'),
+  conn('storyboard_1', 'vidprompt_1', 'storyboard'),
+  conn('vidprompt_1',  'submit_1', 'prompts'),
 ];
 
 const templateC: FixedWorkflow = {
@@ -137,14 +153,19 @@ const nodesD: FixedNodeSnapshot[] = [
 ];
 
 const connectionsD: Connection[] = [
-  conn('input_1',  'parser_1'),
-  conn('parser_1', 'style_1'),
-  conn('style_1',  'char_1'),
-  conn('style_1',  'scene_1'),
-  conn('style_1',  'prop_1'),
-  conn('char_1',   'storyboard_1'),
-  conn('scene_1',  'storyboard_1'),
-  conn('prop_1',   'storyboard_1'),
+  conn('input_1',  'parser_1', 'prompt'),
+  conn('input_1',  'style_1', 'prompt'),
+  conn('parser_1', 'char_1', 'structured'),
+  conn('style_1',  'char_1', 'style'),
+  conn('parser_1', 'scene_1', 'structured'),
+  conn('style_1',  'scene_1', 'style'),
+  conn('parser_1', 'prop_1', 'structured'),
+  conn('style_1',  'prop_1', 'style'),
+  conn('parser_1', 'storyboard_1', 'structured'),
+  conn('style_1',  'storyboard_1', 'style'),
+  conn('char_1',   'storyboard_1', 'characters'),
+  conn('scene_1',  'storyboard_1', 'scenes'),
+  conn('prop_1',   'storyboard_1', 'props'),
 ];
 
 const templateD: FixedWorkflow = {
@@ -167,9 +188,9 @@ const nodesE: FixedNodeSnapshot[] = [
 ];
 
 const connectionsE: Connection[] = [
-  conn('analyzer_1', 'refined_1'),
-  conn('refined_1',  'planner_1'),
-  conn('planner_1',  'episode_1'),
+  conn('analyzer_1', 'refined_1', 'analysis'),
+  conn('refined_1',  'planner_1', 'refined'),
+  conn('planner_1',  'episode_1', 'outline'),
 ];
 
 const templateE: FixedWorkflow = {
