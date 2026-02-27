@@ -115,7 +115,7 @@ async function uploadToTencentCOS(
   // 创建 FormData，使用正确的文件名
   const formData = new FormData();
   formData.append('file', file, finalFileName);
-  formData.append('folder', 'aiyou-uploads');
+  formData.append('folder', 'fcyh-uploads');
 
 
   try {

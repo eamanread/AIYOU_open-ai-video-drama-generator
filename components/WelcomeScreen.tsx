@@ -1,5 +1,5 @@
 /**
- * AIYOU 漫剧生成平台 - 欢迎屏幕组件
+ * 蜂巢映画 漫剧生成平台 - 欢迎屏幕组件
  *
  * @developer 光波 (a@ggbo.com)
  * @copyright Copyright (c) 2025 光波. All rights reserved.
@@ -9,6 +9,7 @@
 import React from 'react';
 import { useLanguage } from '../src/i18n/LanguageContext';
 import { Galaxy } from './Galaxy';
+import { Logo } from './Logo';
 
 interface WelcomeScreenProps {
   visible: boolean;
@@ -54,11 +55,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = React.memo(({ visible
       {/* 标题 */}
       <div className="flex flex-col items-center justify-center mb-10 select-none animate-in fade-in slide-in-from-bottom-8 duration-1000">
         <div className="relative mb-8">
-          <img
-            src="/logo.png"
-            alt="AIYOU Logo"
-            className="h-40 md:h-52 object-contain drop-shadow-2xl"
-          />
+          <Logo size="lg" showSubtitle />
         </div>
 
         <div className="flex items-center gap-4">

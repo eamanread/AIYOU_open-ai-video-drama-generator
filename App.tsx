@@ -1,5 +1,5 @@
 /**
- * AIYOU 漫剧生成平台 - 主应用组件
+ * 蜂巢映画 漫剧生成平台 - 主应用组件
  *
  * @developer 光波 (a@ggbo.com)
  * @copyright Copyright (c) 2025 光波. All rights reserved.
@@ -23,6 +23,7 @@ import { saveImageNodeOutput, saveVideoNodeOutput, saveAudioNodeOutput, saveStor
 import { checkImageNodeCache, checkVideoNodeCache, checkAudioNodeCache } from './utils/cacheChecker';
 import { validateConnection, canExecuteNode } from './utils/nodeValidation';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { Logo } from './components/Logo';
 import { MemoizedConnectionLayer } from './components/ConnectionLayer';
 import { CanvasContextMenu } from './components/CanvasContextMenu';
 import { ApiKeyPrompt } from './components/ApiKeyPrompt';
@@ -41,6 +42,11 @@ import { initSync, setSyncProjectId, getSyncProjectId, createStoreSubscription, 
 import { useNodeActions } from './handlers/useNodeActions';
 import { useWorkflowActions } from './handlers/useWorkflowActions';
 import { useKeyboardShortcuts } from './handlers/useKeyboardShortcuts';
+import { registerAllNodeServices } from './services/nodes/registry';
+import { instantiateWorkflow } from './services/workflowSolidifier';
+import { WORKFLOW_TEMPLATES } from './services/workflowTemplates';
+import TemplateSelector from './components/TemplateSelector';
+import ProjectManager from './components/ProjectManager';
 
 // Lazy load large components
 const VideoEditor = lazy(() => import('./components/VideoEditor').then(m => ({ default: m.VideoEditor })));
@@ -120,6 +126,8 @@ export const App = () => {
     storageReconnectNeeded, setStorageReconnectNeeded,
     croppingNodeId, setCroppingNodeId,
     imageToCrop, setImageToCrop,
+    isTemplateSelectorOpen, setIsTemplateSelectorOpen,
+    isProjectManagerOpen, setIsProjectManagerOpen,
   } = useUIStore();
 
   const {
@@ -219,6 +227,11 @@ export const App = () => {
       groupsRef.current = groups;
       connectionStartRef.current = connectionStart;
   }, [nodes, connections, groups, connectionStart]);
+
+  // 注册所有节点服务（仅执行一次）
+  useEffect(() => {
+    registerAllNodeServices();
+  }, []);
 
   useEffect(() => {
       // 版权声明 - 光波开发
@@ -628,6 +641,17 @@ export const App = () => {
       setIsApiKeyPromptOpen(false);
       console.info('✅ Gemini API Key 已保存成功！');
   }, []);
+
+  // 工作流模板选择 → 实例化节点和连线到画布
+  const handleSelectTemplate = useCallback((templateId: string) => {
+    const template = WORKFLOW_TEMPLATES.find(t => t.id === templateId);
+    if (!template) return;
+
+    const { nodes: newNodes, connections: newConns } = instantiateWorkflow(template, {});
+    setNodes(newNodes);
+    setConnections(newConns);
+    setIsTemplateSelectorOpen(false);
+  }, [setNodes, setConnections, setIsTemplateSelectorOpen]);
 
   const handleFitView = useCallback(() => {
       if (nodes.length === 0) {
@@ -1581,12 +1605,8 @@ export const App = () => {
 
           {/* Canvas Logo - Fixed at top-left, hidden when showing welcome screen */}
           {nodes.length > 0 && (
-            <div className="absolute top-4 left-4 z-40 pointer-events-none select-none">
-              <img
-                src="/logo.png"
-                alt="AIYOU Logo"
-                className="h-16 md:h-20 object-contain opacity-80 hover:opacity-100 transition-opacity"
-              />
+            <div className="absolute top-4 left-4 z-40 pointer-events-none select-none opacity-80">
+              <Logo size="sm" />
             </div>
           )}
 
@@ -1871,6 +1891,19 @@ export const App = () => {
             onClose={() => setIsDebugOpen(false)}
           />
 
+          {/* 工作流模板选择器 */}
+          <TemplateSelector
+            isOpen={isTemplateSelectorOpen}
+            onClose={() => setIsTemplateSelectorOpen(false)}
+            onSelectTemplate={handleSelectTemplate}
+          />
+
+          {/* 项目管理器 */}
+          <ProjectManager
+            isOpen={isProjectManagerOpen}
+            onClose={() => setIsProjectManagerOpen(false)}
+          />
+
           {/* 视频编辑器 */}
           <Suspense fallback={<div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"><Loader2 size={48} className="animate-spin text-cyan-400" /></div>}>
             <VideoEditor
@@ -1899,6 +1932,10 @@ export const App = () => {
               onToggleCharacterLibrary={() => setIsCharacterLibraryOpen(!isCharacterLibraryOpen)}
               isDebugOpen={isDebugOpen}
               onToggleDebug={() => setIsDebugOpen(!isDebugOpen)}
+              isTemplateSelectorOpen={isTemplateSelectorOpen}
+              onToggleTemplateSelector={() => setIsTemplateSelectorOpen(!isTemplateSelectorOpen)}
+              isProjectManagerOpen={isProjectManagerOpen}
+              onToggleProjectManager={() => setIsProjectManagerOpen(!isProjectManagerOpen)}
               assetHistory={assetHistory}
               onHistoryItemClick={(item) => { const type = item.type.includes('image') ? NodeType.IMAGE_GENERATOR : NodeType.VIDEO_GENERATOR; const data = item.type === 'image' ? { image: item.src } : { videoUri: item.src }; addNode(type, undefined, undefined, data); }}
               onDeleteAsset={(id) => setAssetHistory(prev => prev.filter(a => a.id !== id))}

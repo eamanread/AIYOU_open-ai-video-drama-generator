@@ -1,5 +1,5 @@
 /**
- * AIYOU 漫剧生成平台 - 节点共享类型
+ * 蜂巢映画 漫剧生成平台 - 节点共享类型
  *
  * @developer 光波 (a@ggbo.com)
  * @copyright Copyright (c) 2025 光波. All rights reserved.

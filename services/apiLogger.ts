@@ -46,7 +46,7 @@ export interface APILogEntry {
 class APILogger {
     private logs: APILogEntry[] = [];
     private maxLogs = 30;  // 最多保存30条日志（减少内存占用）
-    private storageKey = 'AIYOU_API_LOGS';
+    private storageKey = 'FCYH_API_LOGS';
     // 开发者标识 - 用于证明版权归属
     private readonly DEVELOPER = '光波';
     private readonly DEVELOPER_EMAIL = 'a@ggbo.com';

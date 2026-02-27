@@ -1,7 +1,7 @@
 {
-  "name": "aiyou-server",
+  "name": "fcyh-server",
   "version": "1.0.0",
-  "description": "AIYOU Backend Server - OSS Upload API",
+  "description": "蜂巢映画 Backend Server - OSS Upload API",
   "main": "index.js",
   "type": "module",
   "pnpm": {

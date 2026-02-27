@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { AppNode, Connection, Workflow, NodeStatus } from '../types';
+import { useProjectStore } from './project.store';
 
 // 用户接口
 export interface User {
@@ -57,6 +58,12 @@ interface AppState {
   nodes: AppNode[];
   connections: Connection[];
   workflows: Workflow[];
+
+  // 项目关联
+  activeProjectId: string | null;
+  setActiveProject: (id: string) => void;
+  /** 优先从活跃项目读取 workflows，无活跃项目时回退到本地 workflows */
+  getWorkflows: () => Workflow[];
 
   // 用户
   user: User | null;
@@ -114,6 +121,7 @@ export const useAppStore = create<AppState>()(
       nodes: [],
       connections: [],
       workflows: [],
+      activeProjectId: null,
       user: null,
       isAuthenticated: false,
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -196,6 +204,19 @@ export const useAppStore = create<AppState>()(
       setNodes: (nodes) => set({ nodes }),
 
       setConnections: (connections) => set({ connections }),
+
+      // ========== 项目关联 ==========
+      setActiveProject: (id) => set({ activeProjectId: id }),
+
+      getWorkflows: () => {
+        const { activeProjectId, workflows } = get();
+        if (activeProjectId) {
+          const project = useProjectStore.getState()
+            .projects.find((p) => p.id === activeProjectId);
+          if (project) return project.workflows;
+        }
+        return workflows;
+      },
 
       // ========== 工作流操作 ==========
       setWorkflows: (workflows) => set({ workflows }),
@@ -288,7 +309,7 @@ export const useAppStore = create<AppState>()(
       })
     }),
     {
-      name: 'aiyou-storage', // LocalStorage key
+      name: 'fcyh-storage', // LocalStorage key
       partialize: (state) => ({
         // 只持久化部分状态
         nodes: state.nodes,
@@ -304,7 +325,7 @@ export const useAppStore = create<AppState>()(
 
 export const useNodes = () => useAppStore((state) => state.nodes);
 export const useConnections = () => useAppStore((state) => state.connections);
-export const useWorkflows = () => useAppStore((state) => state.workflows);
+export const useWorkflows = () => useAppStore((state) => state.getWorkflows());
 export const useUser = () => useAppStore((state) => state.user);
 export const useIsAuthenticated = () => useAppStore((state) => state.isAuthenticated);
 export const useViewport = () => useAppStore((state) => state.viewport);

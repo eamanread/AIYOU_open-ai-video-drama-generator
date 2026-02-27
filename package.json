@@ -1,5 +1,5 @@
 {
-  "name": "aiyou",
+  "name": "fcyh",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -21,7 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "tauri:dev": "tauri dev",
     "tauri:build-server": "node scripts/build-server.js",
-    "tauri:build": "pnpm tauri:build-server && tauri build"
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
