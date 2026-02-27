@@ -3,7 +3,7 @@
  * 负责调用 Google Gemini API 生成视频
  */
 
-import { AppNode } from '../../types';
+import { AppNode, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
 import { generateVideo } from '../geminiService';
 
@@ -12,6 +12,18 @@ import { generateVideo } from '../geminiService';
  */
 export class VideoGeneratorNodeService extends BaseNodeService {
   readonly nodeType = 'VIDEO_GENERATOR';
+
+  readonly inputSchema: PortSchema[] = [
+    { key: 'prompt', type: 'string', label: '提示词', required: false },
+    { key: 'imageUrl', type: 'string', label: '参考图片', required: false },
+  ];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'videoUrl', type: 'string', label: '视频URL', required: true },
+    { key: 'videoUrls', type: 'string[]', label: '所有视频URL', required: false },
+    { key: 'thumbnailUrl', type: 'string', label: '缩略图URL', required: false },
+    { key: 'prompt', type: 'string', label: '使用的提示词', required: false },
+  ];
 
   /**
    * 验证输入

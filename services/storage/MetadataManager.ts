@@ -12,7 +12,7 @@ interface MetadataData {
   lastUpdated: string;
 }
 
-const METADATA_FILE_NAME = '.aiyou-metadata.json';
+const METADATA_FILE_NAME = '.fcyh-metadata.json';
 const METADATA_VERSION = '1.0.0';
 
 export class MetadataManager {

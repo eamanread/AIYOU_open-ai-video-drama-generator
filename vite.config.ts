@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     return {
       clearScreen: false,
       server: {
-        port: 5173,
+        port: 4000,
         host: '0.0.0.0',
         strictPort: true,
       },

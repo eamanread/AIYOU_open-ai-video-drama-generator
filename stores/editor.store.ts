@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import type { AppNode, Connection, Group, Workflow } from '../types';
+import { validateConnection } from '../services/connectionValidator';
 
 interface EditorState {
   // Core data
@@ -43,6 +44,8 @@ interface EditorState {
   setNodes: (nodes: AppNode[] | ((prev: AppNode[]) => AppNode[])) => void;
   updateNode: (id: string, data: Partial<AppNode['data']>) => void;
   setConnections: (connections: Connection[] | ((prev: Connection[]) => Connection[])) => void;
+  addConnection: (conn: Connection) => { success: boolean; reason?: string };
+  checkConnectionCompatibility: (fromNodeId: string, toNodeId: string, fromPort?: string, toPort?: string) => boolean;
   setGroups: (groups: Group[] | ((prev: Group[]) => Group[])) => void;
   setWorkflows: (workflows: Workflow[] | ((prev: Workflow[]) => Workflow[])) => void;
   setAssetHistory: (assetHistory: any[] | ((prev: any[]) => any[])) => void;
@@ -71,7 +74,7 @@ interface EditorState {
   setSelectionRect: (v: any) => void;
 }
 
-export const useEditorStore = create<EditorState>((set) => ({
+export const useEditorStore = create<EditorState>((set, get) => ({
   // Initial values - core data
   nodes: [],
   connections: [],
@@ -115,6 +118,25 @@ export const useEditorStore = create<EditorState>((set) => ({
   setConnections: (connections) => set((state) => ({
     connections: typeof connections === 'function' ? connections(state.connections) : connections,
   })),
+  addConnection: (conn) => {
+    const { nodes, connections } = get();
+    const result = validateConnection(conn, nodes, connections);
+    if (!result.valid) {
+      return { success: false, reason: result.reason };
+    }
+    set({ connections: [...connections, conn] });
+    return { success: true };
+  },
+  checkConnectionCompatibility: (fromNodeId, toNodeId, fromPort, toPort) => {
+    const { nodes, connections } = get();
+    const tempConn: Connection = {
+      from: fromNodeId,
+      to: toNodeId,
+      fromPort,
+      toPort,
+    };
+    return validateConnection(tempConn, nodes, connections).valid;
+  },
   setGroups: (groups) => set((state) => ({
     groups: typeof groups === 'function' ? groups(state.groups) : groups,
   })),

@@ -3,7 +3,7 @@
  * 负责收集和存储用户输入的提示词
  */
 
-import { AppNode } from '../../types';
+import { AppNode, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
 
 /**
@@ -12,6 +12,13 @@ import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './ba
  */
 export class PromptInputNodeService extends BaseNodeService {
   readonly nodeType = 'PROMPT_INPUT';
+
+  readonly inputSchema: PortSchema[] = [];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'prompt', type: 'string', label: '提示词', required: true },
+    { key: 'wordCount', type: 'number', label: '字数统计', required: false },
+  ];
 
   /**
    * 执行提示词输入节点

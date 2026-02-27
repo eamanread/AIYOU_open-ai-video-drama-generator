@@ -3,8 +3,9 @@
  * 管理所有节点服务的注册、获取和执行
  */
 
-import { AppNode, Connection, NodeType } from '../../types';
-import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
+import { AppNode, Connection, NodeType, PipelineState } from '../../types';
+import { BaseNodeService, NodeExecutionContext, NodeExecutionResult, NodeStatus } from './baseNode.service';
+import { PipelineEngine } from '../pipelineEngine';
 
 /**
  * 节点服务类型映射
@@ -81,7 +82,7 @@ class NodeServiceRegistryClass {
     node: AppNode,
     allNodes: AppNode[],
     connections: Connection[],
-    updateNodeStatus: (nodeId: string, status: string) => void,
+    updateNodeStatus: (nodeId: string, status: NodeStatus) => void,
     updateNodeData: (nodeId: string, data: any) => void
   ): Promise<NodeExecutionResult> {
     // 获取节点服务
@@ -90,7 +91,7 @@ class NodeServiceRegistryClass {
       return {
         success: false,
         error: `未找到节点服务: ${node.type}`,
-        status: 'error'
+        status: NodeStatus.ERROR
       };
     }
 
@@ -120,6 +121,7 @@ class NodeServiceRegistryClass {
   }
 
   /**
+   * @deprecated 使用 executePipeline 替代
    * 批量执行节点（按照依赖顺序）
    * 使用拓扑排序确保节点按照正确的顺序执行
    * @param nodes - 要执行的节点列表
@@ -132,7 +134,7 @@ class NodeServiceRegistryClass {
   async executeNodesInOrder(
     nodes: AppNode[],
     connections: Connection[],
-    updateNodeStatus: (nodeId: string, status: string) => void,
+    updateNodeStatus: (nodeId: string, status: NodeStatus) => void,
     updateNodeData: (nodeId: string, data: any) => void,
     onProgress?: (current: number, total: number, currentNode: string) => void
   ): Promise<{
@@ -189,6 +191,37 @@ class NodeServiceRegistryClass {
     }
 
     return { success: successCount, failed: failedCount, results };
+  }
+
+  /**
+   * 使用 PipelineEngine 执行管线
+   * 支持拓扑分层并行、暂停/恢复、跳过失败节点
+   * @param nodes - 要执行的节点列表
+   * @param connections - 所有连接列表
+   * @returns Promise<PipelineState>
+   */
+  async executePipeline(
+    nodes: AppNode[],
+    connections: Connection[]
+  ): Promise<PipelineState> {
+    const context: NodeExecutionContext = {
+      nodeId: '',
+      nodes,
+      connections,
+      getInputData: (fromNodeId: string, outputKey?: string) => {
+        const sourceNode = nodes.find(n => n.id === fromNodeId);
+        if (!sourceNode) return null;
+        if (outputKey) return sourceNode.data[outputKey];
+        return sourceNode.data;
+      },
+      updateNodeStatus: () => {},
+      updateNodeData: () => {},
+    };
+
+    const engine = new PipelineEngine(
+      nodes, connections, this, context
+    );
+    return engine.run();
   }
 
   /**
@@ -259,4 +292,5 @@ class NodeServiceRegistryClass {
 export const NodeServiceRegistry = new NodeServiceRegistryClass();
 
 // 导出类型和基类
-export { BaseNodeService, NodeExecutionContext, NodeExecutionResult, NodeStatus };
+export { BaseNodeService, NodeStatus } from './baseNode.service';
+export type { NodeExecutionContext, NodeExecutionResult } from './baseNode.service';

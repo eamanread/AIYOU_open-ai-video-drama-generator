@@ -70,7 +70,7 @@ export interface VideoProvider {
     textToVideo: boolean;
     imageToVideo: boolean;
     maxDuration: number; // 最大时长（秒）
-    supportedRatios: Array<'16:9' | '9:16'>;
+    supportedRatios: readonly ('16:9' | '9:16')[];
   };
 
   // 配置转换

@@ -3,7 +3,7 @@
  * 所有节点服务必须继承此基类并实现 execute 方法
  */
 
-import { AppNode, Connection } from '../../types';
+import { AppNode, Connection, PortSchema, RetryConfig, NodeStatus } from '../../types';
 
 /**
  * 节点执行结果接口
@@ -13,7 +13,7 @@ export interface NodeExecutionResult {
   data?: any;
   error?: string;
   outputs?: Record<string, any>; // 输出数据（用于连接到下游节点）
-  status?: 'idle' | 'running' | 'success' | 'error';
+  status?: NodeStatus;
 }
 
 /**
@@ -31,15 +31,8 @@ export interface NodeExecutionContext {
   updateNodeData: (nodeId: string, data: any) => void;
 }
 
-/**
- * 节点状态枚举
- */
-export enum NodeStatus {
-  IDLE = 'idle',
-  RUNNING = 'running',
-  SUCCESS = 'success',
-  ERROR = 'error'
-}
+// NodeStatus is re-exported from ../../types (single source of truth)
+export { NodeStatus } from '../../types';
 
 /**
  * 节点服务基类（抽象类）
@@ -50,6 +43,44 @@ export abstract class BaseNodeService {
    * 节点类型（子类必须实现）
    */
   abstract readonly nodeType: string;
+
+  /**
+   * 输入端口 Schema 声明（子类必须实现）
+   */
+  abstract readonly inputSchema: PortSchema[];
+
+  /**
+   * 输出端口 Schema 声明（子类必须实现）
+   */
+  abstract readonly outputSchema: PortSchema[];
+
+  /**
+   * 重试配置，子类可覆盖
+   */
+  protected retryConfig: RetryConfig = {
+    maxRetries: 3,
+    backoffMs: 1000,
+    backoffMultiplier: 2,
+    pauseAware: true,
+  };
+
+  /**
+   * 暂停信号，由 PipelineEngine 外部设置
+   */
+  private _paused = false;
+
+  setPaused(paused: boolean): void {
+    this._paused = paused;
+  }
+
+  /**
+   * 等待暂停恢复，重试间隔内感知暂停信号
+   */
+  protected async waitIfPaused(): Promise<void> {
+    while (this._paused) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
 
   /**
    * 执行节点逻辑（子类必须实现）
@@ -122,7 +153,7 @@ export abstract class BaseNodeService {
 
     // 获取所有输入节点的数据
     return inputConnections.map(conn =>
-      context.getInputData(conn.from, conn.outputKey)
+      context.getInputData(conn.from, conn.fromPort)
     );
   }
 
@@ -181,39 +212,47 @@ export abstract class BaseNodeService {
     node: AppNode,
     context: NodeExecutionContext
   ): Promise<NodeExecutionResult> {
-    try {
-      // 1. 验证输入
-      const validation = this.validateInputs(node, context);
-      if (!validation.valid) {
-        const errorMessage = `输入验证失败: ${validation.errors.join(', ')}`;
-        this.updateNodeStatus(node.id, NodeStatus.ERROR, context);
-        return this.createErrorResult(errorMessage);
-      }
-
-      // 2. 更新状态为运行中
-      this.updateNodeStatus(node.id, NodeStatus.RUNNING, context);
-
-      // 3. 执行节点逻辑
-      const result = await this.execute(node, context);
-
-      // 4. 更新最终状态
-      if (result.success) {
-        this.updateNodeStatus(node.id, NodeStatus.SUCCESS, context);
-      } else {
-        this.updateNodeStatus(node.id, NodeStatus.ERROR, context);
-      }
-
-      return result;
-    } catch (error) {
-      // 5. 错误处理
-      const errorMessage = error instanceof Error
-        ? error.message
-        : '未知错误';
-
-      console.error(`节点 ${node.id} 执行失败:`, error);
+    // 1. 验证输入
+    const validation = this.validateInputs(node, context);
+    if (!validation.valid) {
+      const errorMessage = `输入验证失败: ${validation.errors.join(', ')}`;
       this.updateNodeStatus(node.id, NodeStatus.ERROR, context);
-
       return this.createErrorResult(errorMessage);
     }
+
+    // 2. 更新状态为运行中
+    this.updateNodeStatus(node.id, NodeStatus.RUNNING, context);
+
+    // 3. 带重试的执行
+    const { maxRetries, backoffMs, backoffMultiplier } = this.retryConfig;
+    let lastError: string = '';
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // 暂停感知
+        await this.waitIfPaused();
+
+        const result = await this.execute(node, context);
+        if (result.success) {
+          this.updateNodeStatus(node.id, NodeStatus.SUCCESS, context);
+          return result;
+        }
+        lastError = result.error || '执行返回失败';
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : '未知错误';
+      }
+
+      // 还有重试机会则等待退避
+      if (attempt < maxRetries) {
+        const delay = backoffMs * Math.pow(backoffMultiplier, attempt);
+        console.warn(`节点 ${node.id} 第 ${attempt + 1} 次失败，${delay}ms 后重试`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    // 4. 全部重试耗尽
+    console.error(`节点 ${node.id} 重试 ${maxRetries} 次后仍失败:`, lastError);
+    this.updateNodeStatus(node.id, NodeStatus.ERROR, context);
+    return this.createErrorResult(lastError);
   }
 }

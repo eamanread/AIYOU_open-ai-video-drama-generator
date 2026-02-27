@@ -1,5 +1,5 @@
 /**
- * AIYOU 漫剧生成平台 - 类型定义
+ * 蜂巢映画 漫剧生成平台 - 类型定义
  *
  * @developer 光波 (a@ggbo.com)
  * @copyright Copyright (c) 2025 光波. All rights reserved.
@@ -50,13 +50,20 @@ export enum NodeType {
   STORYBOARD_VIDEO_GENERATOR = 'STORYBOARD_VIDEO_GENERATOR',
   STORYBOARD_VIDEO_CHILD = 'STORYBOARD_VIDEO_CHILD',
   VIDEO_EDITOR = 'VIDEO_EDITOR',
+  // ── Phase 1 新增节点类型 ──
+  SCRIPT_PARSER = 'SCRIPT_PARSER',
+  SCENE_ASSET = 'SCENE_ASSET',
+  PROP_ASSET = 'PROP_ASSET',
+  VIDEO_PROMPT_GENERATOR = 'VIDEO_PROMPT_GENERATOR',
+  PLATFORM_SUBMIT = 'PLATFORM_SUBMIT',
 }
 
 export enum NodeStatus {
-  IDLE = 'IDLE',
-  WORKING = 'WORKING',
-  SUCCESS = 'SUCCESS',
-  ERROR = 'ERROR',
+  IDLE = 'idle',
+  WORKING = 'running',   // UI legacy alias — prefer RUNNING
+  RUNNING = 'running',   // canonical "in-progress" value
+  SUCCESS = 'success',
+  ERROR = 'error',
 }
 
 export type VideoGenerationMode = 'DEFAULT' | 'CONTINUE' | 'CUT' | 'FIRST_LAST_FRAME' | 'CHARACTER_REF';
@@ -403,6 +410,8 @@ export interface Connection {
   id?: string;
   from: string;
   to: string;
+  fromPort?: string;  // 输出端口标识，旧数据缺省时视为 'default'
+  toPort?: string;    // 输入端口标识，旧数据缺省时视为 'default'
 }
 
 export interface ContextMenuState {
@@ -619,6 +628,168 @@ export interface StoryboardVideoChildData {
 
   // UI状态
   promptExpanded: boolean;
+}
+
+// ============================================================
+// Phase 1 新增类型 — 端口 Schema
+// ============================================================
+
+export interface PortSchema {
+  key: string;              // 端口标识，如 'script', 'style', 'image'
+  type: string;             // 数据类型标识，如 'structured-script', 'style-config'
+  label: string;            // 显示名称
+  required: boolean;
+  description?: string;
+}
+
+// ============================================================
+// Phase 1 新增类型 — 画风配置
+// ============================================================
+
+export interface StyleConfig {
+  mode: 'simple' | 'fourPart';
+  stylePrompt?: string;
+  prefix?: string;
+  lens?: string;
+  scene?: string;
+  lighting?: string;
+  visualStyle: 'REAL' | 'ANIME' | '3D';
+  negativePrompt?: string;
+  templateId?: string;
+}
+
+// ============================================================
+// Phase 1 新增类型 — 重试与管线状态
+// ============================================================
+
+export interface RetryConfig {
+  maxRetries: number;           // 默认 3
+  backoffMs: number;            // 初始退避毫秒，默认 1000
+  backoffMultiplier: number;    // 退避倍数，默认 2
+  pauseAware: boolean;          // 重试间隔内感知暂停信号
+}
+
+export type PipelineStatus = 'idle' | 'running' | 'paused' | 'waiting_user' | 'completed' | 'error';
+export type NodeRunStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped' | 'waiting';
+
+export interface PipelineState {
+  status: PipelineStatus;
+  executionOrder: string[];     // 拓扑排序后的节点 ID 序列
+  nodeStatuses: Record<string, NodeRunStatus>;
+  currentIndex: number;
+  failures: Record<string, { error: string; retryCount: number }>;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+// ============================================================
+// Phase 1 新增类型 — 提示词模板
+// ============================================================
+
+export interface TemplateVariable {
+  name: string;                 // 变量名，如 "characterName"
+  source: 'input' | 'config' | 'upstream';
+  sourceKey?: string;           // upstream 时指定端口 key
+  defaultValue?: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  nodeType: NodeType;           // 适用的节点类型
+  body: string;                 // 模板正文，含 {{variable}} 占位
+  variables: TemplateVariable[];
+  version: number;
+  createdAt: number;
+}
+
+// ============================================================
+// Phase 1 新增类型 — Project 层
+// ============================================================
+
+export interface AssetLibrary {
+  characters: CharacterProfile[];
+  scenes: SceneAssetData[];
+  props: PropAssetData[];
+}
+
+export interface SceneAssetData {
+  id: string;
+  name: string;
+  location: string;
+  referenceGrid?: string;
+  promptZh?: string;
+  promptEn?: string;
+  status: 'PENDING' | 'GENERATING' | 'SUCCESS' | 'FAILED';
+}
+
+export interface PropAssetData {
+  id: string;
+  name: string;
+  description: string;
+  threeViewSheet?: string;
+  promptZh?: string;
+  promptEn?: string;
+  status: 'PENDING' | 'GENERATING' | 'SUCCESS' | 'FAILED';
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  sharedStyle: StyleConfig | null;
+  sharedAssets: AssetLibrary;
+  workflows: Workflow[];
+  settings: {
+    defaultModel: string;
+    retryConfig: RetryConfig;
+    apiConfig: LLMProviderConfig;
+  };
+} // end Project
+
+// ============================================================
+// Phase 1 新增类型 — 工作流固化
+// ============================================================
+
+export interface FixedNodeSnapshot {
+  nodeId: string;
+  nodeType: NodeType;
+  configSnapshot: Record<string, any>;
+  runtimeInputs: string[];       // 运行时需要用户填入的字段名
+}
+
+export interface FixedWorkflow {
+  id: string;
+  name: string;
+  sourceWorkflowId: string;
+  nodes: FixedNodeSnapshot[];
+  connections: Connection[];
+  executionMode: 'one_click' | 'step_by_step';
+  waitPoints: string[];          // step_by_step 模式下需要人工确认的节点 ID
+  createdAt: number;
+}
+
+// ============================================================
+// Phase 1 新增类型 — 平台提交 Provider
+// ============================================================
+
+export interface PlatformProvider {
+  readonly name: string;           // "jimeng" | "kling" | "sora" | "yunwuapi"
+  readonly label: string;          // 显示名称，如 "即梦"、"可灵"
+  submit(request: PlatformShotRequest): Promise<{ taskId: string }>;
+  getStatus(taskId: string): Promise<{ status: string; videoUrl?: string }>;
+  checkAvailability(): Promise<boolean>;
+}
+
+export interface PlatformShotRequest {
+  shotId: string;
+  prompt: string;
+  referenceImage?: string;
+  duration: number;
+  aspectRatio: string;
+  model?: string;
+  quality?: string;
 }
 
 // Window interface for Google AI Studio key selection

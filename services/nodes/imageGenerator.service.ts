@@ -3,7 +3,7 @@
  * 负责调用 AI Provider API 生成图像 (支持 Google Gemini 和 云雾 API)
  */
 
-import { AppNode } from '../../types';
+import { AppNode, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult, NodeStatus } from './baseNode.service';
 import { generateImageWithProvider } from '../aiAdapter';
 import { getUserDefaultModel } from '../modelConfig';
@@ -26,6 +26,16 @@ interface ImageGenerationRequest {
  */
 export class ImageGeneratorNodeService extends BaseNodeService {
   readonly nodeType = 'IMAGE_GENERATOR';
+
+  readonly inputSchema: PortSchema[] = [
+    { key: 'prompt', type: 'string', label: '提示词', required: true },
+  ];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'imageUrl', type: 'string', label: '主图像URL', required: true },
+    { key: 'imageUrls', type: 'string[]', label: '所有图像URL', required: false },
+    { key: 'prompt', type: 'string', label: '使用的提示词', required: false },
+  ];
 
   /**
    * 验证输入

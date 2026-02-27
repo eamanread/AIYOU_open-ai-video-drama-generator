@@ -3,7 +3,7 @@
  * 支持多平台、多模型视频生成
  */
 
-import { AppNode, NodeType, NodeStatus, SplitStoryboardShot, StoryboardVideoGeneratorData, StoryboardVideoChildData } from '../../types';
+import { AppNode, NodeType, NodeStatus, PortSchema, SplitStoryboardShot, StoryboardVideoGeneratorData, StoryboardVideoChildData } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
 import { promptBuilderFactory } from '../promptBuilders';
 import { generateVideoFromStoryboard } from '../videoGenerationService';
@@ -17,6 +17,16 @@ import { VideoModelType } from '../videoPlatforms';
  */
 export class StoryboardVideoGeneratorNodeService extends BaseNodeService {
   readonly nodeType = 'STORYBOARD_VIDEO_GENERATOR';
+
+  readonly inputSchema: PortSchema[] = [
+    { key: 'splitShots', type: 'SplitStoryboardShot[]', label: '拆解后的分镜', required: true },
+    { key: 'characterData', type: 'CharacterProfile[]', label: '角色数据', required: false },
+  ];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'videoUrl', type: 'string', label: '生成的视频URL', required: true },
+    { key: 'childNodeId', type: 'string', label: '子节点ID', required: false },
+  ];
 
   /**
    * 验证输入
@@ -337,6 +347,7 @@ export class StoryboardVideoGeneratorNodeService extends BaseNodeService {
       data: childData,
       title: `视频结果 #${(parentData.childNodeIds?.length || 0) + 1}`,
       status: NodeStatus.SUCCESS,
+      inputs: [parentNode.id],
     };
 
     // 添加到画布

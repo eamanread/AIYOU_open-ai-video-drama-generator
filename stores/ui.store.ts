@@ -20,6 +20,8 @@ interface UIState {
   isApiKeyPromptOpen: boolean;
   isDebugOpen: boolean;
   isVideoEditorOpen: boolean;
+  isTemplateSelectorOpen: boolean;
+  isProjectManagerOpen: boolean;
 
   // Modal data
   viewingCharacter: { character: CharacterProfile; nodeId: string } | null;
@@ -45,6 +47,8 @@ interface UIState {
   setIsApiKeyPromptOpen: (v: boolean) => void;
   setIsDebugOpen: (v: boolean) => void;
   setIsVideoEditorOpen: (v: boolean) => void;
+  setIsTemplateSelectorOpen: (v: boolean) => void;
+  setIsProjectManagerOpen: (v: boolean) => void;
   setViewingCharacter: (v: { character: CharacterProfile; nodeId: string } | null) => void;
   setVideoEditorSources: (v: VideoSource[]) => void;
   setExpandedMedia: (v: any) => void;
@@ -66,6 +70,8 @@ export const useUIStore = create<UIState>((set) => ({
   isApiKeyPromptOpen: false,
   isDebugOpen: false,
   isVideoEditorOpen: false,
+  isTemplateSelectorOpen: false,
+  isProjectManagerOpen: false,
 
   // Initial values - modal data
   viewingCharacter: null,
@@ -91,6 +97,8 @@ export const useUIStore = create<UIState>((set) => ({
   setIsApiKeyPromptOpen: (v) => set({ isApiKeyPromptOpen: v }),
   setIsDebugOpen: (v) => set({ isDebugOpen: v }),
   setIsVideoEditorOpen: (v) => set({ isVideoEditorOpen: v }),
+  setIsTemplateSelectorOpen: (v) => set({ isTemplateSelectorOpen: v }),
+  setIsProjectManagerOpen: (v) => set({ isProjectManagerOpen: v }),
   setViewingCharacter: (v) => set({ viewingCharacter: v }),
   setVideoEditorSources: (v) => set({ videoEditorSources: v }),
   setExpandedMedia: (v) => set({ expandedMedia: v }),

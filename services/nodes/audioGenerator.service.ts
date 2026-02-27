@@ -3,7 +3,7 @@
  * 负责调用 Google Gemini API 生成音乐/音效
  */
 
-import { AppNode } from '../../types';
+import { AppNode, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
 import { generateAudio } from '../geminiService';
 
@@ -12,6 +12,15 @@ import { generateAudio } from '../geminiService';
  */
 export class AudioGeneratorNodeService extends BaseNodeService {
   readonly nodeType = 'AUDIO_GENERATOR';
+
+  readonly inputSchema: PortSchema[] = [
+    { key: 'prompt', type: 'string', label: '音频描述提示词', required: true },
+  ];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'audioUrl', type: 'string', label: '音频URL', required: true },
+    { key: 'prompt', type: 'string', label: '使用的提示词', required: false },
+  ];
 
   /**
    * 验证输入

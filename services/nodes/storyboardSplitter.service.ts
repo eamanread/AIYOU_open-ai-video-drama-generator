@@ -3,7 +3,7 @@
  * 负责切割九宫格/六宫格分镜图为单个分镜
  */
 
-import { AppNode } from '../../types';
+import { AppNode, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
 import { splitMultipleStoryboardImages } from '../../utils/imageSplitter';
 
@@ -12,6 +12,17 @@ import { splitMultipleStoryboardImages } from '../../utils/imageSplitter';
  */
 export class StoryboardSplitterNodeService extends BaseNodeService {
   readonly nodeType = 'STORYBOARD_SPLITTER';
+
+  readonly inputSchema: PortSchema[] = [
+    { key: 'storyboardGridImages', type: 'string[]', label: '分镜宫格图', required: true },
+    { key: 'storyboardGridType', type: 'string', label: '宫格类型', required: false },
+    { key: 'storyboardShots', type: 'StoryboardShot[]', label: '分镜描述数据', required: false },
+  ];
+
+  readonly outputSchema: PortSchema[] = [
+    { key: 'splitShots', type: 'SplitStoryboardShot[]', label: '拆解后的分镜列表', required: true },
+    { key: 'totalShots', type: 'number', label: '分镜总数', required: false },
+  ];
 
   /**
    * 验证输入

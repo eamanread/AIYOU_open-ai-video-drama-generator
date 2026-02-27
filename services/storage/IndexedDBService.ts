@@ -67,7 +67,7 @@ export interface StorageStats {
 
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
-  private readonly DB_NAME = 'AIYOU_LOCAL_DB';
+  private readonly DB_NAME = 'FCYH_LOCAL_DB';
   private readonly DB_VERSION = 2;
 
   /**
