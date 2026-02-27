@@ -96,3 +96,21 @@ Phase 1 全部合入 main 后才能开工；三条线路互不依赖，可独立
 - [x] vite build 通过 (18.83s)
 - [x] 本地无 Rust，cargo check 由 CI 执行
 - [x] CI workflow 语法正确
+
+---
+
+## 临时任务线：测试重写 + 代码审查修复（2026-02-27）
+
+- [x] R1: 重跑全量测试，确认失败基线与影响范围
+- [x] R2: 修正并重写 nodeHelpers 高度断言（与当前渲染逻辑一致）
+- [x] R3: 补充 nodeValidation 回归用例（SCRIPT_PARSER 与未知类型防御）
+- [x] R4: 修复 nodeValidation 执行前校验与防御分支
+- [x] R5: 全量测试回归通过（79/79）
+
+## 临时任务线：Workflow Builder Skill（2026-02-27）
+
+- [x] S-W1: 使用 skill-creator 初始化技能骨架
+- [x] S-W2: 编写 8 阶段闭环执行流程（含 3 套工作流方案 + 3 套补节点方案）
+- [x] S-W3: 增加节点覆盖审计脚本（types/registry/validation 三维核对）
+- [x] S-W4: 生成 agents/openai.yaml 并通过 quick_validate
+- [x] S-W5: 脚本正反例运行验证

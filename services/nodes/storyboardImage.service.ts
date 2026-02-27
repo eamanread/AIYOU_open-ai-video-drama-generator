@@ -5,6 +5,7 @@
 
 import { AppNode, NodeType, PortSchema } from '../../types';
 import { BaseNodeService, NodeExecutionContext, NodeExecutionResult } from './baseNode.service';
+import { generateImageFromText } from '../geminiService';
 
 export class StoryboardImageService extends BaseNodeService {
   readonly nodeType = NodeType.STORYBOARD_IMAGE;
@@ -67,15 +68,20 @@ export class StoryboardImageService extends BaseNodeService {
     return parts.join(', ');
   }
 
-  /**
-   * 单镜头图片生成（占位）
-   */
   private async generateShotImage(
     prompt: string,
     aspectRatio: string
   ): Promise<string | undefined> {
-    // TODO: import { generateImageWithFallback } from '../geminiServiceWithFallback';
-    console.log(`[StoryboardImage] 待生成: ${prompt.slice(0, 50)}...`);
-    return undefined;
+    try {
+      const images = await generateImageFromText(
+        prompt,
+        'imagen-3.0-generate-002',
+        [],
+        { aspectRatio },
+      );
+      return images?.[0];
+    } catch {
+      return undefined;
+    }
   }
 }

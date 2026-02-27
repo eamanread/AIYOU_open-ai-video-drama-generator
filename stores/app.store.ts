@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { AppNode, Connection, Workflow, NodeStatus } from '../types';
+import { AppNode, Connection, Workflow, NodeStatus, PipelineState } from '../types';
 import { useProjectStore } from './project.store';
 
 // 用户接口
@@ -73,6 +73,10 @@ interface AppState {
   viewport: Viewport;
   ui: UIState;
 
+  // 管线执行状态
+  pipelineState: PipelineState | null;
+  setPipelineState: (state: PipelineState | null) => void;
+
   // 节点操作
   addNode: (node: AppNode) => void;
   updateNode: (id: string, data: Partial<AppNode['data']>) => void;
@@ -132,6 +136,10 @@ export const useAppStore = create<AppState>()(
         isConnecting: false,
         contextMenu: null
       },
+
+      // ========== 管线执行状态 ==========
+      pipelineState: null,
+      setPipelineState: (pipelineState) => set({ pipelineState }),
 
       // ========== 节点操作 ==========
       addNode: (node) => set((state) => ({
@@ -331,6 +339,7 @@ export const useIsAuthenticated = () => useAppStore((state) => state.isAuthentic
 export const useViewport = () => useAppStore((state) => state.viewport);
 export const useSelectedNodes = () => useAppStore((state) => state.ui.selectedNodeIds);
 export const useSelectedConnections = () => useAppStore((state) => state.ui.selectedConnectionIds);
+export const usePipelineState = () => useAppStore((state) => state.pipelineState);
 
 // 组合选择器
 export const useNodeById = (id: string) => {

@@ -92,3 +92,29 @@ Phase 1 全部合入 → Phase 2 才能开工；Phase 2 三线互不依赖
 - 代码四道关卡：本地测试 → PR提交 → CI自动化 → 人工Review
 - Phase端到端验收：P1现有节点跑通 → P2节点独立执行 → P3全链路 → P4压测恢复
 - Prompt质量：5组测试数据，人工评分 ≥ 3.5/5 才能入库
+
+## 2026-02-27 测试重写与代码审查发现
+
+### 测试层发现
+- `utils/nodeHelpers.test.ts` 存在旧断言（历史高度逻辑），已与现实现对齐（`DEFAULT_FIXED_HEIGHT=360`，`STORYBOARD_GENERATOR=500`，`CHARACTER_NODE=600`）。
+- 新增/升级节点后，`utils/nodeValidation.test.ts` 原覆盖不足，缺少 `SCRIPT_PARSER` 执行前校验和未知类型防御场景。
+
+### 代码层发现（根因）
+- `canExecuteNode()` 未覆盖 `SCRIPT_PARSER` 的最小可执行条件，导致“无输入且无 prompt”可通过预检，但运行时失败。
+- `validateConnection()` / `canExecuteNode()` 对未知节点类型缺少防御，存在运行时 `TypeError` 风险（读取 `undefined.allowedOutputs/minInputs`）。
+
+### 已落地修复
+- 在 `utils/nodeValidation.ts` 增加未知类型保护分支，返回结构化校验错误而非抛异常。
+- 为 `SCRIPT_PARSER` 增加执行前校验：必须具备 `prompt` 或至少一个上游输入。
+- 在 `utils/nodeValidation.test.ts` 新增 4 个回归用例覆盖上述行为。
+
+### 验证结果
+- `npx vitest run utils/nodeValidation.test.ts`：25/25 通过。
+- `npm test`：5 个测试文件、79 个测试全部通过。
+
+## 2026-02-27 新技能构建发现（aiyou-workflow-builder）
+
+- 采用 `skill-creator` 初始化流程时，`short_description` 需满足 25-64 字符，否则 `agents/openai.yaml` 生成失败。
+- 将技能放置在项目路径 `AIYOU_open-ai-video-drama-generator/.agents/skills` 可避免外层目录写权限限制。
+- 新增节点审计脚本可显著降低“选定工作流后才发现节点不齐”的返工概率。
+- 技能已具备完整闭环：需求锁定 → 三方案选择 → 节点缺口方案选择 → 构建 → 自动验证与代码审查 → 询问是否合并上线。

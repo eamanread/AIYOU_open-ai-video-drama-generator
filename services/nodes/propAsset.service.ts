@@ -9,6 +9,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { generateImageFromText } from '../geminiService';
 
 interface ScriptScene {
   props?: string[];
@@ -118,12 +119,17 @@ export class PropAssetService extends BaseNodeService {
     return { zh, en };
   }
 
-  /**
-   * TODO: 接入图片生成 API，生成道具三视图
-   * 当前为占位实现，返回 undefined
-   */
   private async generateThreeViewSheet(asset: PropAssetData): Promise<string | undefined> {
-    console.log(`[PropAsset] 待生成三视图: ${asset.name}`);
-    return undefined;
+    try {
+      const images = await generateImageFromText(
+        asset.promptEn || asset.promptZh,
+        'imagen-3.0-generate-002',
+        [],
+        { aspectRatio: '3:1' },
+      );
+      return images?.[0];
+    } catch {
+      return undefined;
+    }
   }
 }

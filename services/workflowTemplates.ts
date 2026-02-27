@@ -2,6 +2,7 @@
  * 预设工作流模板 — 开箱即用的 3 套固化流程
  */
 import { NodeType, Connection, FixedWorkflow, FixedNodeSnapshot } from '../types';
+import { IndexedDBService } from './storage/IndexedDBService';
 
 // ── helper ──────────────────────────────────────────────────
 function makeNode(
@@ -211,11 +212,64 @@ export function importTemplate(json: string): FixedWorkflow | null {
   }
 }
 
-/** 用户自建模板存储（内存，TODO: 持久化到 IndexedDB） */
-const userTemplates: FixedWorkflow[] = [];
+/** 用户自建模板存储 — 内存缓存 + IndexedDB 持久化 */
+let userTemplates: FixedWorkflow[] = [];
+let dbInitialized = false;
+const db = new IndexedDBService();
 
-export function addUserTemplate(template: FixedWorkflow): void {
+/** 应用启动时调用，从 IndexedDB 加载用户模板到内存缓存 */
+export async function initUserTemplates(): Promise<void> {
+  if (dbInitialized) return;
+  try {
+    const records = await db.getAllWorkflowMetadata();
+    userTemplates = records.map(r => {
+      const nodes: FixedNodeSnapshot[] = JSON.parse(r.nodes);
+      const connections: Connection[] = JSON.parse(r.connections);
+      const meta = r.metadata ? JSON.parse(r.metadata) : {};
+      return {
+        id: r.id,
+        name: r.title,
+        sourceWorkflowId: meta.sourceWorkflowId ?? '',
+        nodes,
+        connections,
+        executionMode: meta.executionMode ?? 'step_by_step',
+        waitPoints: meta.waitPoints ?? [],
+        createdAt: r.created_at instanceof Date ? r.created_at.getTime() : Number(r.created_at) || 0,
+      } as FixedWorkflow;
+    });
+    dbInitialized = true;
+  } catch (err) {
+    console.warn('[WorkflowTemplates] IndexedDB 不可用，使用内存模式', err);
+    dbInitialized = true;
+  }
+}
+
+/** 将 FixedWorkflow 转为 WorkflowMetadataRecord 写入 IndexedDB */
+function toRecord(template: FixedWorkflow) {
+  const now = new Date();
+  return {
+    id: template.id,
+    title: template.name,
+    nodes: JSON.stringify(template.nodes),
+    connections: JSON.stringify(template.connections),
+    metadata: JSON.stringify({
+      sourceWorkflowId: template.sourceWorkflowId,
+      executionMode: template.executionMode,
+      waitPoints: template.waitPoints,
+    }),
+    created_at: now,
+    updated_at: now,
+    is_favorite: false,
+  };
+}
+
+export async function addUserTemplate(template: FixedWorkflow): Promise<void> {
   userTemplates.push(template);
+  try {
+    await db.saveWorkflowMetadata(toRecord(template));
+  } catch (err) {
+    console.warn('[WorkflowTemplates] IndexedDB 写入失败', err);
+  }
 }
 
 export function getUserTemplates(): FixedWorkflow[] {
@@ -226,8 +280,14 @@ export function getAllTemplates(): FixedWorkflow[] {
   return [...WORKFLOW_TEMPLATES, ...userTemplates];
 }
 
-export function removeUserTemplate(id: string): boolean {
+export async function removeUserTemplate(id: string): Promise<boolean> {
   const idx = userTemplates.findIndex(t => t.id === id);
-  if (idx >= 0) { userTemplates.splice(idx, 1); return true; }
-  return false;
+  if (idx < 0) return false;
+  userTemplates.splice(idx, 1);
+  try {
+    await db.deleteWorkflowMetadata(id);
+  } catch (err) {
+    console.warn('[WorkflowTemplates] IndexedDB 删除失败', err);
+  }
+  return true;
 }

@@ -9,6 +9,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { generateScriptPlanner } from '../geminiService';
 
 export class ScriptPlannerService extends BaseNodeService {
   readonly nodeType = NodeType.SCRIPT_PLANNER;
@@ -60,11 +61,19 @@ export class ScriptPlannerService extends BaseNodeService {
     }
   }
 
-  /** TODO: 接入实际 generateScriptPlanner */
   private async callLLM(prompt: string, config: any, refinedInfo: any): Promise<string> {
-    // TODO: import { generateScriptPlanner } from '../geminiService';
-    // return generateScriptPlanner(prompt, config, refinedInfo, model);
-    console.log('[ScriptPlanner] callLLM mock');
-    return `Mock 大纲: ${config.scriptTheme || '未指定主题'}`;
+    const apiConfig = {
+      theme: config.scriptTheme,
+      genre: config.scriptGenre,
+      setting: config.scriptSetting,
+      episodes: config.scriptEpisodes,
+      duration: config.scriptDuration,
+      visualStyle: config.scriptVisualStyle,
+    };
+    const outline = await generateScriptPlanner(prompt, apiConfig, refinedInfo);
+    if (!outline?.trim()) {
+      throw new Error('大纲生成为空，请检查 API 配置');
+    }
+    return outline;
   }
 }

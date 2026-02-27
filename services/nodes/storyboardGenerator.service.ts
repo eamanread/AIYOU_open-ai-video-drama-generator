@@ -10,6 +10,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { generateDetailedStoryboard } from '../geminiService';
 
 export class StoryboardGeneratorService extends BaseNodeService {
   readonly nodeType = NodeType.STORYBOARD_GENERATOR;
@@ -60,20 +61,21 @@ export class StoryboardGeneratorService extends BaseNodeService {
     }
   }
 
-  /**
-   * 分镜生成（占位）
-   * TODO: import { generateDetailedStoryboard } from '../geminiService';
-   *       替换为实际 LLM 调用，传入 callback / model / context
-   */
   private async generateStoryboard(
     title: string,
     content: string,
     duration: number,
     visualStyle: string,
   ): Promise<any[]> {
-    console.log(`[StoryboardGenerator] mock, title=${title}, duration=${duration}s, style=${visualStyle}`);
-    return [
-      { id: 'shot_1', shotNumber: 1, duration: 4, shotSize: '中景', description: 'Mock镜头' },
-    ];
+    const shots = await generateDetailedStoryboard(
+      title,
+      content,
+      duration,
+      visualStyle,
+    );
+    if (!shots?.length) {
+      throw new Error('未生成任何分镜，请检查剧本内容');
+    }
+    return shots;
   }
 }

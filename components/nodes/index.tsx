@@ -35,6 +35,7 @@ import { NodeProps, InputAsset, NodeContentContext } from './types';
 import { SecureVideo, safePlay, safePause, AudioVisualizer, EpisodeViewer, InputThumbnails } from './helpers';
 import { MediaContent } from './MediaContent';
 import { BottomPanel } from './BottomPanel';
+import { useAppStore } from '../../stores/app.store';
 
 /**
  * 节点信息提示组件 — 叹号图标，hover 显示节点介绍和连接范围
@@ -638,6 +639,22 @@ const NodeComponent: React.FC<NodeProps> = ({
             </span>
           )}
           <NodeInfoTooltip type={node.type} />
+          {/* 管线执行状态徽标 */}
+          {(() => {
+            const pipelineState = useAppStore.getState().pipelineState;
+            const nodeRunStatus = pipelineState?.nodeStatuses?.[node.id];
+            if (!nodeRunStatus || nodeRunStatus === 'pending') return null;
+            if (nodeRunStatus === 'running') return <Loader2 className="animate-spin w-3 h-3 text-blue-400 ml-1" />;
+            if (nodeRunStatus === 'success') return <CheckCircle className="w-3 h-3 text-green-400 ml-1" />;
+            if (nodeRunStatus === 'error') return (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full ml-1" title={pipelineState?.failures?.[node.id]?.error || '执行失败'}>
+                <AlertCircle className="w-3 h-3 text-red-400" />
+                <span className="text-[9px] font-medium text-red-400">失败</span>
+              </div>
+            );
+            if (nodeRunStatus === 'skipped') return <span className="text-[9px] text-slate-500 ml-1">已跳过</span>;
+            return null;
+          })()}
           {isWorking && <Loader2 className="animate-spin w-3 h-3 text-cyan-400 ml-1" />}
           {/* ✅ 缓存指示器 */}
           {node.data.isCached && (

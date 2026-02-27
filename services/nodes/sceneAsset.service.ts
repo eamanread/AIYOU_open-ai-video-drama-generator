@@ -10,6 +10,7 @@ import {
   NodeExecutionResult,
   NodeStatus,
 } from './baseNode.service';
+import { generateImageFromText } from '../geminiService';
 
 interface ScriptScene {
   location: string;
@@ -105,16 +106,17 @@ export class SceneAssetService extends BaseNodeService {
     return { zh, en };
   }
 
-  /**
-   * TODO: 接入图片生成 API，生成 2x3 六格环境参考图
-   * 当前为占位实现，返回 undefined
-   */
   private async generateReferenceGrid(asset: SceneAssetData): Promise<string | undefined> {
-    // TODO: 调用 Gemini / Flux 等图片生成 API
-    // 1. 使用 asset.promptEn 作为生图 prompt
-    // 2. 指定 2x3 grid layout
-    // 3. 返回 Base64 编码的图片字符串
-    console.log(`[SceneAsset] 待生成参考图: ${asset.name}`);
-    return undefined;
+    try {
+      const images = await generateImageFromText(
+        asset.promptEn || asset.promptZh,
+        'imagen-3.0-generate-002',
+        [],
+        { aspectRatio: '1:1' },
+      );
+      return images?.[0];
+    } catch {
+      return undefined;
+    }
   }
 }

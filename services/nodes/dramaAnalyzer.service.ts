@@ -10,6 +10,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { analyzeDrama } from '../geminiService';
 
 const ANALYSIS_FIELDS: Record<string, string> = {
   dramaIntroduction: '剧集介绍',
@@ -48,9 +49,16 @@ export class DramaAnalyzerService extends BaseNodeService {
       return this.createErrorResult('请先勾选需要提取的分析项');
     }
 
-    // 3. 调用分析提取
+    // 3. 获取剧目名称
+    const upstream = this.getSingleInput(node, context);
+    const dramaName: string = upstream ?? node.data.prompt ?? '';
+    if (!dramaName.trim()) {
+      return this.createErrorResult('请输入剧目名称');
+    }
+
+    // 4. 调用分析提取
     try {
-      const results = await this.extractAnalysis(node.data, selectedFields);
+      const results = await this.extractAnalysis(dramaName, selectedFields);
 
       // 4. 格式化为可读文本
       const formattedText = selectedFields
@@ -71,18 +79,17 @@ export class DramaAnalyzerService extends BaseNodeService {
     }
   }
 
-  /**
-   * 提取分析结果（占位，待接入 geminiService.extractRefinedTags）
-   */
   private async extractAnalysis(
-    data: any,
+    dramaName: string,
     fields: string[],
   ): Promise<Record<string, string>> {
-    // TODO: import { extractRefinedTags } from '../geminiService';
-    // return extractRefinedTags(data, fields);
-    console.log(`[DramaAnalyzer] mock, fields=${fields.join(',')}`);
-    return Object.fromEntries(
-      fields.map((f) => [f, `Mock ${ANALYSIS_FIELDS[f] || f}`]),
-    );
+    const analysis = await analyzeDrama(dramaName);
+    // Extract selected fields from the analysis result
+    const results: Record<string, string> = {};
+    for (const field of fields) {
+      const value = (analysis as any)[field];
+      results[field] = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+    }
+    return results;
   }
 }

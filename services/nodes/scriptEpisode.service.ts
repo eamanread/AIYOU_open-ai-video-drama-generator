@@ -10,6 +10,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { generateScriptEpisodes } from '../geminiService';
 
 interface GeneratedEpisode {
   title: string;
@@ -86,13 +87,20 @@ export class ScriptEpisodeService extends BaseNodeService {
     }
   }
 
-  /** TODO: import { generateScriptEpisodes } from '../geminiService'; */
   private async callLLM(outline: string, config: any): Promise<GeneratedEpisode[]> {
-    console.log('[ScriptEpisode] callLLM mock', { outlineLen: outline.length, chapter: config.selectedChapter });
-    return [{
-      title: `第${config.selectedChapter}章 Mock`,
-      characters: 'Mock角色',
-      content: 'Mock内容',
-    }];
+    const episodes = await generateScriptEpisodes(
+      outline,
+      config.selectedChapter,
+      config.episodeSplitCount,
+      config.episodeSplitCount, // duration in minutes
+      config.scriptVisualStyle,
+      config.episodeModificationSuggestion,
+      undefined, // model — use default
+      config.previousEpisodes,
+    );
+    if (!episodes?.length) {
+      throw new Error('未生成任何分集，请检查大纲内容');
+    }
+    return episodes;
   }
 }

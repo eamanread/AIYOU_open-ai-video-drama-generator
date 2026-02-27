@@ -9,6 +9,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from './baseNode.service';
+import { extractCharactersFromText, generateCharacterProfile, generateImageFromText } from '../geminiService';
 
 interface CharacterAsset {
   id: string;
@@ -61,22 +62,49 @@ export class CharacterNodeService extends BaseNodeService {
     return this.createSuccessResult({ characters }, { characters: { characters } });
   }
 
-  /**
-   * 从剧本文本中提取角色信息
-   * TODO: import { generateCharacterProfile } from '../geminiService';
-   */
   private async extractCharacters(scriptText: string): Promise<CharacterAsset[]> {
-    console.log('[CharacterNode] extractCharacters mock, textLen:', scriptText.length);
-    return [
-      { id: 'char_001', name: 'Mock角色', appearance: '短发青年', status: 'PENDING' },
-    ];
+    const names = await extractCharactersFromText(scriptText);
+    if (!names?.length) {
+      return [];
+    }
+    const assets: CharacterAsset[] = [];
+    for (const name of names) {
+      try {
+        const profile = await generateCharacterProfile(name, scriptText);
+        assets.push({
+          id: `char_${String(assets.length + 1).padStart(3, '0')}`,
+          name: profile.name || name,
+          appearance: profile.basicStats || '',
+          promptEn: profile.appearancePrompt,
+          status: 'PENDING',
+        });
+      } catch {
+        assets.push({
+          id: `char_${String(assets.length + 1).padStart(3, '0')}`,
+          name,
+          appearance: '',
+          status: 'FAILED',
+        });
+      }
+    }
+    return assets;
   }
 
-  /**
-   * 为单个角色生成表情九宫格 / 三视图等图片资产
-   * TODO: import { generateImageWithFallback } from '../geminiServiceWithFallback';
-   */
   private async generateCharacterImages(char: CharacterAsset, _style: StyleConfig | null): Promise<void> {
-    console.log(`[CharacterNode] 待生成角色图: ${char.name}`);
+    if (!char.promptEn) return;
+    try {
+      char.status = 'GENERATING';
+      const styleSuffix = _style?.stylePrompt ? `, ${_style.stylePrompt}` : '';
+      const imageBase64 = await generateImageFromText(
+        `${char.promptEn}${styleSuffix}`,
+        'imagen-3.0-generate-002',
+      );
+      if (imageBase64) {
+        char.expressionSheet = imageBase64;
+        char.status = 'SUCCESS';
+      }
+    } catch {
+      char.status = 'FAILED';
+    }
   }
 }

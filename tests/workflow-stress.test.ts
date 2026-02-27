@@ -188,7 +188,7 @@ describe('Template System Stress', () => {
     expect(importTemplate(JSON.stringify({ name: 'y', nodes: [], connections: [] }))).toBeNull();
   });
 
-  it('6. user template CRUD — add 3, verify count, remove 1, verify count', () => {
+  it('6. user template CRUD — add 3, verify count, remove 1, verify count', async () => {
     const baseCount = getAllTemplates().length;
 
     const tpl1: FixedWorkflow = {
@@ -198,21 +198,21 @@ describe('Template System Stress', () => {
     const tpl2: FixedWorkflow = { ...tpl1, id: 'user_2', name: 'U2' };
     const tpl3: FixedWorkflow = { ...tpl1, id: 'user_3', name: 'U3' };
 
-    addUserTemplate(tpl1);
-    addUserTemplate(tpl2);
-    addUserTemplate(tpl3);
+    await addUserTemplate(tpl1);
+    await addUserTemplate(tpl2);
+    await addUserTemplate(tpl3);
 
     expect(getAllTemplates().length).toBe(baseCount + 3);
     expect(getUserTemplates().length).toBe(3);
 
-    const removed = removeUserTemplate('user_2');
+    const removed = await removeUserTemplate('user_2');
     expect(removed).toBe(true);
     expect(getAllTemplates().length).toBe(baseCount + 2);
     expect(getUserTemplates().length).toBe(2);
 
     // cleanup
-    removeUserTemplate('user_1');
-    removeUserTemplate('user_3');
+    await removeUserTemplate('user_1');
+    await removeUserTemplate('user_3');
   });
 });
 

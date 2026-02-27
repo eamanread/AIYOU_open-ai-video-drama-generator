@@ -5,6 +5,7 @@
  */
 
 import { AppNode, NodeType, PortSchema } from '../../types';
+import { llmProviderManager } from '../llmProviders';
 import {
   BaseNodeService,
   NodeExecutionContext,
@@ -49,7 +50,7 @@ export class ScriptParserService extends BaseNodeService {
 
     try {
       // 2. 调用 LLM 解析
-      const llmResponse = await this.callLLM(rawScript, node.data.model);
+      const llmResponse = await this.callLLM(rawScript, node.data.model, node.id);
 
       // 3. 解析 JSON
       const structured = this.extractJSON(llmResponse);
@@ -68,35 +69,18 @@ export class ScriptParserService extends BaseNodeService {
     }
   }
 
-  /**
-   * TODO: 替换为项目实际 LLM 调用（依赖 API 服务层）
-   * 当前返回 mock 数据用于联调
-   */
-  private async callLLM(script: string, _model?: string): Promise<string> {
-    // TODO: 集成实际 LLM API，示例：
-    // const resp = await llmService.chat({
-    //   model: _model ?? 'gemini-2.0-flash',
-    //   system: PARSE_SYSTEM_PROMPT,
-    //   user: script,
-    // });
-    // return resp.text;
-
-    console.log(`[ScriptParser] callLLM mock, input length=${script.length}, model=${_model}`);
-    return JSON.stringify({
-      title: 'Mock 剧本',
-      genre: '都市',
-      totalEpisodes: 1,
-      episodeDuration: 60,
-      visualStyle: 'REAL',
-      worldview: '现代都市背景',
-      setting: '2025年，某一线城市',
-      characters: [
-        { id: 'char_001', name: '主角', role: 'protagonist', age: '28岁', gender: '男', appearance: '短发，深色西装', personality: '沉稳内敛' },
-      ],
-      episodes: [
-        { episodeNumber: 1, title: '第一集', synopsis: 'Mock 梗概', scenes: [] },
-      ],
-    });
+  private async callLLM(script: string, model?: string, nodeId?: string): Promise<string> {
+    const response = await llmProviderManager.generateContent(
+      script,
+      model || 'gemini-2.0-flash',
+      {
+        systemInstruction: PARSE_SYSTEM_PROMPT,
+      }
+    );
+    if (!response?.trim()) {
+      throw new Error('LLM 返回为空，请检查 API Key 配置或网络连接');
+    }
+    return response;
   }
 
   /** 从 LLM 响应中提取 JSON，兼容 markdown 代码块包裹 */
@@ -108,7 +92,7 @@ export class ScriptParserService extends BaseNodeService {
     try {
       return JSON.parse(text);
     } catch {
-      throw new Error('LLM 返回内容无法解析为 JSON');
+      throw new Error(`LLM 返回内容无法解析为 JSON。原始响应片段: ${text.substring(0, 200)}`);
     }
   }
 }

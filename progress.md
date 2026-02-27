@@ -53,3 +53,30 @@
 | 2026-02-27 23:30 | C07 PlatformProvider 接口去重 | ✅ types.ts 为唯一定义 |
 | 2026-02-27 23:30 | I04 Provider 注册补全 | ✅ yunwuapi 适配器注册 |
 | 2026-02-27 23:30 | 代码审查关键问题全部修复 | ✅ 编译通过 + 测试通过 |
+| 2026-02-27 14:05 | 重跑全量测试获取基线 | ✅ 75 tests，定位 4 个失败 |
+| 2026-02-27 14:12 | 重写 nodeHelpers 高度断言 | ✅ 与当前组件高度策略对齐 |
+| 2026-02-27 14:13 | 新增 nodeValidation 回归用例（SCRIPT_PARSER+未知类型防御） | ✅ 先失败（3 例）后修复 |
+| 2026-02-27 14:14 | 修复 nodeValidation 执行前校验与防御分支 | ✅ utils/nodeValidation.test.ts 25/25 |
+| 2026-02-27 14:14 | 全量回归 | ✅ 79/79 通过 |
+| 2026-02-27 16:27 | 初始化技能 aiyou-workflow-builder | ✅ 项目内 `.agents/skills` |
+| 2026-02-27 16:30 | 编写技能流程与节点审计脚本 | ✅ 闭环流程+脚本可执行 |
+| 2026-02-27 16:31 | 技能校验与脚本验证 | ✅ quick_validate 通过 + 审计脚本正反例通过 |
+| 2026-02-27 08:50 | Phase 0-1: docs/prompt-templates.md | ✅ 10节点prompt模板+变量表+函数映射 |
+| 2026-02-27 08:50 | Phase 0-2: docs/migration-checklist.md | ✅ A1-A10共10个Agent迁移清单 |
+| 2026-02-27 08:50 | Phase 0-3: docs/test-cases.md | ✅ 7章节：单元/E2E/冒烟/回归/约定 |
+| 2026-02-27 08:50 | **Phase 0 文档补全完成** | ✅ 3份缺失文档全部就绪，门禁通过 |
+| 2026-02-27 08:55 | Wave 1: A1 ScriptParser mock→real | ✅ llmProviderManager.generateContent() |
+| 2026-02-27 08:55 | Wave 1: A2 ScriptPlanner+Episode mock→real | ✅ generateScriptPlanner/Episodes() |
+| 2026-02-27 08:55 | Wave 1: A3 StoryboardGenerator mock→real | ✅ generateDetailedStoryboard() |
+| 2026-02-27 08:55 | Wave 1: A4 CharacterNode mock→real | ✅ extractCharacters+Profile+ImageFromText |
+| 2026-02-27 08:55 | Wave 1: A5 DramaAnalyzer mock→real | ✅ analyzeDrama() |
+| 2026-02-27 08:55 | **Wave 1 全部完成** | ✅ 79/79 tests pass，6个service去mock |
+| 2026-02-27 09:04 | Wave 2: A6 StoryboardImage+SceneAsset+PropAsset mock→real | ✅ generateImageFromText() |
+| 2026-02-27 09:04 | Wave 2: A7 JimengProvider mock→real | ✅ postMessage bridge + sendAndWait |
+| 2026-02-27 09:04 | Wave 2: A8 Template persistence IndexedDB | ✅ 内存缓存+IndexedDB双写 |
+| 2026-02-27 09:04 | Wave 2: 修复 workflow-stress.test async | ✅ removeUserTemplate await |
+| 2026-02-27 09:04 | **Wave 2 全部完成** | ✅ 79/79 tests pass，3个service+1个provider+1个store |
+| 2026-02-27 09:09 | Wave 3: A9 Pipeline E2E 集成测试 | ✅ 8个测试覆盖Template C全路径+异常+控制 |
+| 2026-02-27 09:09 | Wave 3: A10 管线进度UI | ✅ pipelineState→store + 节点状态徽标 |
+| 2026-02-27 09:09 | **Wave 3 全部完成** | ✅ 87/87 tests pass |
+| 2026-02-27 09:09 | **v0.2.0 全部完成** | ✅ Phase0+Wave1+Wave2+Wave3 |

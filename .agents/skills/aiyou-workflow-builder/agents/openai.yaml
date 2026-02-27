@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIYOU Workflow Builder"
+  short_description: "Design-build-test AIYOU workflows"
+  default_prompt: "Use $aiyou-workflow-builder to confirm requirements, propose 3 workflow options, fill node gaps, and run verification before release."

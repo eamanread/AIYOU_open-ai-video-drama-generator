@@ -11,49 +11,70 @@ interface PlatformProvider {
   getStatus(taskId: string): Promise<{ status: string; videoUrl?: string }>;
 }
 
+const MESSAGE_TIMEOUT = 30000; // 30s
+
+/** 发送 postMessage 并等待指定类型的响应 */
+function sendAndWait<T>(
+  type: string,
+  payload?: Record<string, unknown>,
+  timeout = MESSAGE_TIMEOUT,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const handler = (event: MessageEvent) => {
+      if (event.source !== window || event.data?.source !== 'jimeng-extension') return;
+      if (event.data?.type === `${type}_RESULT`) {
+        cleanup();
+        if (event.data.error) {
+          reject(new Error(event.data.error));
+        } else {
+          resolve(event.data.payload as T);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`即梦扩展响应超时 (${timeout / 1000}s)，请确认扩展已安装且即梦页面已打开`));
+    }, timeout);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener('message', handler);
+    };
+
+    window.addEventListener('message', handler);
+    window.postMessage({ type, payload, source: 'fcyh-app' }, '*');
+  });
+}
+
 export class JimengProvider implements PlatformProvider {
   readonly name = 'jimeng';
   readonly label = '即梦AI';
 
-  /**
-   * 检查即梦扩展是否可用
-   * 通过 window.postMessage 探测扩展注入的 content script
-   */
   async checkAvailability(): Promise<boolean> {
-    // TODO: 实际检测逻辑 — 发送 ping 消息，等待 pong 响应
-    // return new Promise((resolve) => {
-    //   const handler = (event: MessageEvent) => {
-    //     if (event.data?.type === 'JIMENG_PONG') { resolve(true); window.removeEventListener('message', handler); }
-    //   };
-    //   window.addEventListener('message', handler);
-    //   window.postMessage({ type: 'JIMENG_PING' }, '*');
-    //   setTimeout(() => { resolve(false); window.removeEventListener('message', handler); }, 3000);
-    // });
-    console.log('[JimengProvider] checkAvailability mock');
-    return true;
+    try {
+      await sendAndWait<{ ok: boolean }>('JIMENG_PING', undefined, 5000);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
-  /**
-   * 提交视频生成任务到即梦
-   */
-  async submit(prompt: string, referenceImage?: string, duration?: number, aspectRatio?: string): Promise<{ taskId: string }> {
-    // TODO: 通过 postMessage 发送到浏览器扩展
-    // window.postMessage({
-    //   type: 'JIMENG_SUBMIT',
-    //   payload: { prompt, referenceImage, duration, aspectRatio }
-    // }, '*');
-    // return new Promise((resolve, reject) => { ... listen for JIMENG_SUBMIT_RESULT });
-    const taskId = `jimeng_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    console.log(`[JimengProvider] submit mock, taskId=${taskId}`);
-    return { taskId };
+  async submit(
+    prompt: string,
+    referenceImage?: string,
+    duration?: number,
+    aspectRatio?: string,
+  ): Promise<{ taskId: string }> {
+    return sendAndWait<{ taskId: string }>('JIMENG_SUBMIT', {
+      prompt,
+      referenceImage,
+      duration,
+      aspectRatio,
+    });
   }
 
-  /**
-   * 查询任务状态
-   */
   async getStatus(taskId: string): Promise<{ status: string; videoUrl?: string }> {
-    // TODO: 通过 postMessage 查询
-    console.log(`[JimengProvider] getStatus mock, taskId=${taskId}`);
-    return { status: 'pending' };
+    return sendAndWait<{ status: string; videoUrl?: string }>('JIMENG_GET_STATUS', { taskId });
   }
 }
